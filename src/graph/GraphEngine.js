@@ -74,6 +74,59 @@ export class GraphEngine extends EngineBase {
     });
   }
 
+    });
+  }
+
+  /**
+   * Community Detection (Label Propagation)
+   * Identifies clusters of trackers that often appear together
+   */
+  detectCommunities(iterations = 5) {
+      const nodes = Array.from(this.nodes.values());
+      // Initialize labels with own ID
+      nodes.forEach(n => n.community = n.id);
+      
+      for (let i = 0; i < iterations; i++) {
+          // Shuffle processing order
+          const shuffled = [...nodes].sort(() => Math.random() - 0.5);
+          
+          shuffled.forEach(node => {
+              const neighborLabels = {};
+              
+              // Find neighbors (In + Out edges)
+              // NOTE: This implementation scans link list; optimized graph would use adjacency list
+              this.links.forEach(link => {
+                  let neighborId = null;
+                  if (link.source === node.id) neighborId = link.target;
+                  if (link.target === node.id) neighborId = link.source;
+                  
+                  if (neighborId) {
+                      const neighbor = this.nodes.get(neighborId);
+                      if (neighbor) {
+                          const label = neighbor.community;
+                          neighborLabels[label] = (neighborLabels[label] || 0) + 1;
+                      }
+                  }
+              });
+              
+              // Adopt most frequent label
+              let bestLabel = node.community;
+              let maxCount = -1;
+              for (const [label, count] of Object.entries(neighborLabels)) {
+                  if (count > maxCount) {
+                      maxCount = count;
+                      bestLabel = label;
+                  }
+              }
+              // If tie or no neighbors, keep current
+              if (maxCount > 0) node.community = bestLabel;
+          });
+      }
+      
+      // Update state
+      nodes.forEach(n => this.nodes.set(n.id, n));
+  }
+
   /**
    * Export graph data for UI
    */
