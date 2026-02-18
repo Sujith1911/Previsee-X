@@ -1,194 +1,199 @@
 """
 PRIVISEE-X Random Forest Tracker Classifier Training
-Production-grade ML pipeline for tracker detection
+Production-grade ML pipeline using real public tracker datasets.
 
-Features:
-- Feature engineering from domain/URL patterns
-- Random Forest with 100 estimators
-- Cross-validation
-- Model export to TensorFlow.js
+Features (13):
+  domainLength, subdomainCount, hasNumbers, tldType, pathDepth,
+  queryParams, hasTrackingParams, isThirdParty, resourceType,
+  domainEntropy, tokenCount, digitRatio, specialCharRatio
+
+Classes (5):
+  benign, advertising, analytics, social, fingerprinting
+
+Usage:
+  python ml/train_random_forest.py
+  (Run ml/build_dataset.py first if dataset_trackers.csv doesn't exist)
 """
 
-import pandas as pd
-import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.metrics import classification_report, confusion_matrix
-import joblib
+import os
 import json
+import joblib
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
+from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.preprocessing import LabelEncoder
+from sklearn.utils.class_weight import compute_class_weight
 
-# Dataset format
-DATASET_PATH = 'dataset_trackers.json'
-MODEL_OUTPUT = '../models/tracker_classifier/model.pkl'
+DATASET_PATH = "dataset_trackers.csv"
+MODEL_DIR = "../models/tracker_classifier"
+MODEL_OUTPUT = os.path.join(MODEL_DIR, "model.pkl")
+ENCODER_OUTPUT = os.path.join(MODEL_DIR, "label_encoder.pkl")
+IMPORTANCES_OUTPUT = os.path.join(MODEL_DIR, "feature_importances.json")
+
+FEATURE_COLS = [
+    "domainLength", "subdomainCount", "hasNumbers", "tldType",
+    "pathDepth", "queryParams", "hasTrackingParams", "isThirdParty",
+    "resourceType", "domainEntropy", "tokenCount", "digitRatio",
+    "specialCharRatio",
+]
+
 
 def load_dataset():
-    """Load and parse dataset"""
-    with open(DATASET_PATH, 'r') as f:
-        data = json.load(f)
-    
-    domains = data['domains']
-    
-    # Extract features and labels
-    X = []
-    y = []
-    
-    for entry in domains:
-        features = [
-            entry['features']['domainLength'],
-            entry['features']['subdomainCount'],
-            entry['features']['hasNumbers'],
-            entry['features']['tldType'],
-            entry['features']['pathDepth'],
-            entry['features']['queryParams'],
-            entry['features']['hasTrackingParams'],
-            entry['features']['isThirdParty'],
-            entry['features']['resourceType'],
-            entry['features']['domainEntropy']
-        ]
-        X.append(features)
-        y.append(entry['label'])
-    
-    return np.array(X), np.array(y)
+    """Load the CSV dataset built by build_dataset.py."""
+    if not os.path.exists(DATASET_PATH):
+        raise FileNotFoundError(
+            f"Dataset not found at '{DATASET_PATH}'.\n"
+            "Run: python ml/build_dataset.py"
+        )
 
-def train_model(X, y):
-    """Train Random Forest classifier"""
-    # Split data
+    df = pd.read_csv(DATASET_PATH)
+    print(f"Loaded {len(df):,} samples from {DATASET_PATH}")
+
+    # Validate columns
+    missing = [c for c in FEATURE_COLS + ["label"] if c not in df.columns]
+    if missing:
+        raise ValueError(f"Missing columns in dataset: {missing}")
+
+    # Drop rows with NaN features
+    before = len(df)
+    df = df.dropna(subset=FEATURE_COLS + ["label"])
+    if len(df) < before:
+        print(f"  Dropped {before - len(df)} rows with NaN values")
+
+    X = df[FEATURE_COLS].values.astype(np.float32)
+    y_raw = df["label"].values
+
+    # Encode labels
+    le = LabelEncoder()
+    y = le.fit_transform(y_raw)
+
+    print(f"\nClasses: {list(le.classes_)}")
+    print("Class distribution:")
+    for cls, count in zip(le.classes_, np.bincount(y)):
+        print(f"  {cls:20} {count:6,}")
+
+    return X, y, le
+
+
+def train_model(X, y, le):
+    """Train Random Forest with class balancing and cross-validation."""
+    # Stratified split
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
+        X, y, test_size=0.20, random_state=42, stratify=y
     )
-    
-    # Initialize model
+
+    # Compute class weights to handle imbalance
+    classes = np.unique(y_train)
+    weights = compute_class_weight("balanced", classes=classes, y=y_train)
+    class_weight_dict = dict(zip(classes, weights))
+
+    # Random Forest — tuned hyperparameters
     model = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=10,
-        min_samples_split=5,
+        n_estimators=200,
+        max_depth=15,
+        min_samples_split=4,
         min_samples_leaf=2,
+        max_features="sqrt",
+        class_weight=class_weight_dict,
         random_state=42,
-        n_jobs=-1
+        n_jobs=-1,
+        oob_score=True,
     )
-    
-    # Train
-    print("Training Random Forest...")
+
+    print("\nTraining Random Forest (200 estimators, max_depth=15)...")
     model.fit(X_train, y_train)
-    
-    # Evaluate
-    train_score = model.score(X_train, y_train)
-    test_score = model.score(X_test, y_test)
-    
-    print(f"Train Accuracy: {train_score:.4f}")
-    print(f"Test Accuracy: {test_score:.4f}")
-    
-    # Cross-validation
-    cv_scores = cross_val_score(model, X_train, y_train, cv=5)
-    print(f"Cross-Validation Accuracy: {cv_scores.mean():.4f} (+/- {cv_scores.std():.4f})")
-    
-    # Detailed metrics
+
+    # Scores
+    train_acc = model.score(X_train, y_train)
+    test_acc = model.score(X_test, y_test)
+    oob_acc = model.oob_score_
+
+    print(f"\n  Train Accuracy : {train_acc:.4f}")
+    print(f"  Test  Accuracy : {test_acc:.4f}")
+    print(f"  OOB   Accuracy : {oob_acc:.4f}")
+
+    # 5-fold cross-validation on training set
+    print("\nRunning 5-fold cross-validation...")
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    cv_scores = cross_val_score(model, X_train, y_train, cv=cv, scoring="accuracy", n_jobs=-1)
+    print(f"  CV Accuracy: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
+
+    # Detailed metrics on test set
     y_pred = model.predict(X_test)
-    print("\nClassification Report:")
-    print(classification_report(y_test, y_pred))
-    
-    print("\nConfusion Matrix:")
-    print(confusion_matrix(y_test, y_pred))
-    
-    # Feature importance
-    feature_names = [
-        'domainLength', 'subdomainCount', 'hasNumbers', 'tldType',
-        'pathDepth', 'queryParams', 'hasTrackingParams', 'isThirdParty',
-        'resourceType', 'domainEntropy'
-    ]
-    
+    print("\nClassification Report (Test Set):")
+    print(classification_report(y_test, y_pred, target_names=le.classes_))
+
+    print("Confusion Matrix:")
+    cm = confusion_matrix(y_test, y_pred)
+    # Pretty-print with class names
+    header = "".join(f"{c[:6]:>8}" for c in le.classes_)
+    print(f"{'':>12}{header}")
+    for i, row in enumerate(cm):
+        row_str = "".join(f"{v:>8}" for v in row)
+        print(f"  {le.classes_[i][:10]:>10}  {row_str}")
+
+    # Feature importances
     importances = model.feature_importances_
     indices = np.argsort(importances)[::-1]
-    
-    print("\nFeature Importances:")
-    for i in range(len(feature_names)):
-        print(f"{i+1}. {feature_names[indices[i]]}: {importances[indices[i]]:.4f}")
-    
-    return model
+    print("\nFeature Importances (ranked):")
+    for rank, idx in enumerate(indices):
+        print(f"  {rank+1:2}. {FEATURE_COLS[idx]:25} {importances[idx]:.4f}")
 
-def save_model(model):
-    """Save model to disk"""
+    return model, importances, indices
+
+
+def save_model(model, le, importances, indices):
+    """Save model, encoder, and feature importances."""
+    os.makedirs(MODEL_DIR, exist_ok=True)
+
     joblib.dump(model, MODEL_OUTPUT)
-    print(f"\nModel saved to {MODEL_OUTPUT}")
+    joblib.dump(le, ENCODER_OUTPUT)
 
-def export_for_tfjs(model):
-    """Export model parameters for TensorFlow.js conversion"""
-    # This would require tensorflow conversion
-    # For now, save as pickle for conversion script
-    pass
-
-def create_sample_dataset():
-    """Create sample dataset if none exists"""
-    sample_data = {
-        "domains": [
-            {
-                "domain": "doubleclick.net",
-                "label": "advertising",
-                "features": {
-                    "domainLength": 14,
-                    "subdomainCount": 0,
-                    "hasNumbers": 0,
-                    "tldType": 1,
-                    "pathDepth": 2,
-                    "queryParams": 5,
-                    "hasTrackingParams": 1,
-                    "isThirdParty": 1,
-                    "resourceType": 0,
-                    "domainEntropy": 3.2
-                }
-            },
-            {
-                "domain": "google-analytics.com",
-                "label": "analytics",
-                "features": {
-                    "domainLength": 20,
-                    "subdomainCount": 0,
-                    "hasNumbers": 0,
-                    "tldType": 0,
-                    "pathDepth": 1,
-                    "queryParams": 3,
-                    "hasTrackingParams": 1,
-                    "isThirdParty": 1,
-                    "resourceType": 0,
-                    "domainEntropy": 3.8
-                }
-            },
-            # Add more samples...
-        ]
+    # Save feature importances as JSON
+    fi = {
+        FEATURE_COLS[i]: round(float(importances[i]), 6)
+        for i in range(len(FEATURE_COLS))
     }
-    
-    with open(DATASET_PATH, 'w') as f:
-        json.dump(sample_data, f, indent=2)
-    
-    print(f"Sample dataset created at {DATASET_PATH}")
-    print("NOTE: Add more labeled examples for production use (require 10,000+ samples)")
+    fi_sorted = dict(sorted(fi.items(), key=lambda x: x[1], reverse=True))
+    with open(IMPORTANCES_OUTPUT, "w") as f:
+        json.dump(fi_sorted, f, indent=2)
 
-if __name__ == '__main__':
-    import os
-    
-    # Create sample dataset if needed
-    if not os.path.exists(DATASET_PATH):
-        print("No dataset found. Creating sample...")
-        create_sample_dataset()
-        print("\nTo train a production model:")
-        print("1. Collect 10,000+ labeled tracker domains")
-        print("2. Run feature extraction on each domain")
-        print("3. Save to dataset_trackers.json")
-        print("4. Re-run this script")
-    else:
-        # Load dataset
-        print("Loading dataset...")
-        X, y = load_dataset()
-        print(f"Loaded {len(X)} samples with {X.shape[1]} features")
-        print(f"Class distribution: {np.bincount(y)}")
-        
-        # Train model
-        model = train_model(X, y)
-        
-        # Save model
-        save_model(model)
-        
-        print("\nTraining complete!")
-        print("Next steps:")
-        print("1. Run ml/convert_to_tfjs.py to convert model")
-        print("2. Place converted model in models/tracker_classifier/")
+    # Save model metadata
+    metadata = {
+        "model_type": "RandomForestClassifier",
+        "version": "1.0.0",
+        "n_estimators": model.n_estimators,
+        "max_depth": model.max_depth,
+        "n_features": model.n_features_in_,
+        "feature_names": FEATURE_COLS,
+        "classes": list(le.classes_),
+        "oob_score": round(float(model.oob_score_), 4),
+    }
+    with open(os.path.join(MODEL_DIR, "metadata.json"), "w") as f:
+        json.dump(metadata, f, indent=2)
+
+    print(f"\n✓ Model saved to       : {MODEL_OUTPUT}")
+    print(f"✓ Encoder saved to     : {ENCODER_OUTPUT}")
+    print(f"✓ Importances saved to : {IMPORTANCES_OUTPUT}")
+
+
+if __name__ == "__main__":
+    print("=" * 60)
+    print("PRIVISEE-X Random Forest Tracker Classifier Training")
+    print("=" * 60)
+
+    # Load dataset
+    X, y, le = load_dataset()
+
+    # Train
+    model, importances, indices = train_model(X, y, le)
+
+    # Save
+    save_model(model, le, importances, indices)
+
+    print("\n" + "=" * 60)
+    print("Training complete!")
+    print("Next step: python ml/convert_to_tfjs.py")
+    print("=" * 60)

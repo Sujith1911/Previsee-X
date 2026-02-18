@@ -1,0 +1,15 @@
+{
+  "isThirdParty": 0.281968,
+  "domainEntropy": 0.229731,
+  "domainLength": 0.206872,
+  "subdomainCount": 0.10315,
+  "tldType": 0.071723,
+  "tokenCount": 0.070306,
+  "digitRatio": 0.017138,
+  "specialCharRatio": 0.009831,
+  "hasNumbers": 0.009252,
+  "pathDepth": 2.8e-05,
+  "queryParams": 0.0,
+  "hasTrackingParams": 0.0,
+  "resourceType": 0.0
+}

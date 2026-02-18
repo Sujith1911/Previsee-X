@@ -1,0 +1,30 @@
+{
+  "model_type": "RandomForestClassifier",
+  "version": "1.0.0",
+  "n_estimators": 200,
+  "max_depth": 15,
+  "n_features": 13,
+  "feature_names": [
+    "domainLength",
+    "subdomainCount",
+    "hasNumbers",
+    "tldType",
+    "pathDepth",
+    "queryParams",
+    "hasTrackingParams",
+    "isThirdParty",
+    "resourceType",
+    "domainEntropy",
+    "tokenCount",
+    "digitRatio",
+    "specialCharRatio"
+  ],
+  "classes": [
+    "advertising",
+    "analytics",
+    "benign",
+    "fingerprinting",
+    "social"
+  ],
+  "oob_score": 0.892
+}

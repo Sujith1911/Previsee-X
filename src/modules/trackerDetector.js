@@ -101,15 +101,13 @@ class TrackerDetector {
   }
 
   /**
-   * Load ML model (TensorFlow.js)
+   * Load ML model (Custom Random Forest JSON)
    */
   async loadMLModel() {
     try {
-      // Load TensorFlow.js model
-      this.model = await tf.loadLayersModel(
-        chrome.runtime.getURL('models/tracker_classifier/model.json')
-      );
-      console.log('[TrackerDetector] ML model loaded successfully');
+      const response = await fetch(chrome.runtime.getURL('models/tracker_classifier/model.json'));
+      this.model = await response.json();
+      console.log(`[TrackerDetector] Loaded Random Forest with ${this.model.n_estimators} trees`);
     } catch (error) {
       console.warn('[TrackerDetector] ML model not available:', error);
       this.model = null;
@@ -117,105 +115,111 @@ class TrackerDetector {
   }
 
   /**
-   * Initialize feature statistics for normalization
-   */
-  initializeFeatureStats() {
-    // Mean and std dev for feature normalization
-    this.featureStats = {
-      domainLength: { mean: 15, std: 8 },
-      subdomainCount: { mean: 1, std: 1 },
-      pathDepth: { mean: 2, std: 2 },
-      queryParams: { mean: 1, std: 2 },
-      domainEntropy: { mean: 3.5, std: 0.8 }
-    };
-  }
-
-  /**
-   * Classify domain as tracker or not
-   * @param {string} domain - Domain to classify
-   * @param {string} url - Full URL
-   * @param {object} context - Request context (main domain, type, etc.)
-   * @returns {object} Classification result
-   */
-  async classify(domain, url, context = {}) {
-    await this.ensureInitialized();
-
-    // Step 1: Check blocklist (O(1) lookup)
-    if (this.blocklist.has(domain)) {
-      return {
-        isTracker: true,
-        category: this.categoryMap.get(domain) || 'unknown',
-        confidence: 1.0,
-        source: 'blocklist',
-        domain: domain
-      };
-    }
-
-    // Step 2: Filter out obvious non-trackers
-    if (!context.isThirdParty) {
-      return {
-        isTracker: false,
-        category: null,
-        confidence: 0.0,
-        source: 'first-party',
-        domain: domain
-      };
-    }
-
-    // Step 3: ML classification (if model available)
-    if (this.model) {
-      const mlResult = await this.classifyWithML(domain, url, context);
-      if (mlResult.confidence > 0.7) {
-        return {
-          ...mlResult,
-          isTracker: true,
-          source: 'ml',
-          domain: domain
-        };
-      }
-    }
-
-    // Step 4: Heuristic-based classification
-    const heuristicResult = this.classifyWithHeuristics(domain, url, context);
-    return {
-      ...heuristicResult,
-      domain: domain
-    };
-  }
-
-  /**
-   * ML-based classification using TensorFlow.js
+   * ML-based classification using Random Forest
    */
   async classifyWithML(domain, url, context) {
+    if (!this.model) return { category: 'unknown', confidence: 0.0 };
+
     try {
-      // Extract features
       const features = this.extractFeatures(domain, url, context);
+      const vector = this.vectorizeFeatures(features);
       
-      // Normalize features
-      const normalizedFeatures = this.normalizeFeatures(features);
+      // Vote across all trees
+      const votes = new Array(this.model.classes.length).fill(0);
       
-      // Convert to tensor
-      const inputTensor = tf.tensor2d([normalizedFeatures]);
+      for (const tree of this.model.trees) {
+        const classIdx = this.traverseTree(tree, vector);
+        votes[classIdx]++;
+      }
+
+      // Calculate probabilities
+      const totalVotes = this.model.n_estimators;
+      const probabilities = votes.map(v => v / totalVotes);
       
-      // Predict
-      const prediction = this.model.predict(inputTensor);
-      const probabilities = await prediction.data();
-      
-      // Get class with highest probability
-      const classIndex = probabilities.indexOf(Math.max(...probabilities));
-      const categories = ['advertising', 'analytics', 'social', 'fingerprinting'];
-      
-      inputTensor.dispose();
-      prediction.dispose();
-      
+      // Get best class
+      const maxProb = Math.max(...probabilities);
+      const classIndex = probabilities.indexOf(maxProb);
+      const category = this.model.classes[classIndex];
+
       return {
-        category: categories[classIndex],
-        confidence: probabilities[classIndex]
+        category: category,
+        confidence: maxProb
       };
     } catch (error) {
       console.error('[TrackerDetector] ML classification error:', error);
       return { category: 'unknown', confidence: 0.0 };
     }
+  }
+
+  /**
+   * Traverse a single decision tree
+   */
+  traverseTree(tree, features) {
+    let nodeId = 0; // Root node
+    const maxDepth = 20; // Safety break
+    let depth = 0;
+
+    while (depth < maxDepth) {
+      const leftChild = tree.children_left[nodeId];
+      const rightChild = tree.children_right[nodeId];
+
+      // If leaf node (children are -1)
+      if (leftChild === -1 && rightChild === -1) {
+        // Return class with highest value in leaf
+        const values = tree.values[nodeId];
+        // values is an array of counts/probabilities per class
+        // We want the index of the max value
+        if (Array.isArray(values)) {
+            let maxVal = -1;
+            let maxIdx = 0;
+            for (let i = 0; i < values.length; i++) {
+                if (values[i] > maxVal) {
+                    maxVal = values[i];
+                    maxIdx = i;
+                }
+            }
+            return maxIdx;
+        }
+        return 0; // Fallback
+      }
+
+      // Decision node
+      const featureIdx = tree.features[nodeId];
+      const threshold = tree.thresholds[nodeId];
+
+      if (features[featureIdx] <= threshold) {
+        nodeId = leftChild;
+      } else {
+        nodeId = rightChild;
+      }
+      depth++;
+    }
+    return 0; // Fallback
+  }
+
+  /**
+   * Convert feature object to array (vector)
+   * Order MUST match training:
+   * domainLength, subdomainCount, hasNumbers, tldType,
+   * pathDepth, queryParams, hasTrackingParams, isThirdParty,
+   * resourceType, domainEntropy, tokenCount, digitRatio, specialCharRatio
+   */
+  vectorizeFeatures(features) {
+    return [
+      features.domainLength,
+      features.subdomainCount,
+      features.hasNumbers,
+      features.tldType,
+      features.pathDepth,
+      features.queryParams,
+      features.hasTrackingParams,
+      features.isThirdParty,
+      features.resourceType,
+      features.domainEntropy,
+      features.tokenCount,
+      features.digitRatio,
+      features.specialCharRatio
+    ];
   }
 
   /**
@@ -273,106 +277,51 @@ class TrackerDetector {
 
   /**
    * Extract features from domain and URL
+   * Matches Python implementation in build_dataset.py
    */
   extractFeatures(domain, url, context) {
     const urlObj = url ? new URL(url) : null;
+    const path = urlObj ? urlObj.pathname : '';
+    const query = urlObj ? urlObj.search : '';
+
+    // Calculate ratios
+    const digits = (domain.match(/\d/g) || []).length;
+    const special = (domain.match(/[^a-zA-Z0-9.]/g) || []).length;
+    const len = Math.max(domain.length, 1);
 
     return {
-      // Domain features
+      // 13 Features matching training data
       domainLength: domain.length,
-      subdomainCount: domain.split('.').length - 2,
+      subdomainCount: Math.max(0, domain.split('.').length - 2),
       hasNumbers: /\d/.test(domain) ? 1 : 0,
       tldType: this.getTLDType(domain),
-      
-      // URL features
-      pathDepth: urlObj ? urlObj.pathname.split('/').filter(Boolean).length : 0,
-      queryParams: urlObj ? urlObj.searchParams.size : 0,
+      pathDepth: path.split('/').filter(Boolean).length,
+      queryParams: urlObj ? new URLSearchParams(query).size : 0,
       hasTrackingParams: urlObj ? this.hasTrackingParams(urlObj) : 0,
-      
-      // Context features
       isThirdParty: context.isThirdParty ? 1 : 0,
       resourceType: this.encodeResourceType(context.type || 'other'),
-      
-      // Entropy-based
-      domainEntropy: this.calculateEntropy(domain)
+      domainEntropy: this.calculateEntropy(domain),
+      tokenCount: domain.split(/[-_.]/).length,
+      digitRatio: parseFloat((digits / len).toFixed(4)),
+      specialCharRatio: parseFloat((special / len).toFixed(4))
     };
-  }
-
-  /**
-   * Normalize features using z-score
-   */
-  normalizeFeatures(features) {
-    const normalized = [];
-
-    // Numerical features (z-score normalization)
-    normalized.push((features.domainLength - this.featureStats.domainLength.mean) / 
-                    this.featureStats.domainLength.std);
-    normalized.push((features.subdomainCount - this.featureStats.subdomainCount.mean) / 
-                    this.featureStats.subdomainCount.std);
-    normalized.push((features.pathDepth - this.featureStats.pathDepth.mean) / 
-                    this.featureStats.pathDepth.std);
-    normalized.push((features.queryParams - this.featureStats.queryParams.mean) / 
-                    this.featureStats.queryParams.std);
-    normalized.push((features.domainEntropy - this.featureStats.domainEntropy.mean) / 
-                    this.featureStats.domainEntropy.std);
-
-    // Binary features (already normalized)
-    normalized.push(features.hasNumbers);
-    normalized.push(features.hasTrackingParams);
-    normalized.push(features.isThirdParty);
-
-    // Categorical features (one-hot encoded)
-    normalized.push(features.tldType);
-    normalized.push(features.resourceType);
-
-    return normalized;
-  }
-
-  /**
-   * Get TLD type (encoded)
-   */
-  getTLDType(domain) {
-    const tld = domain.split('.').pop();
-    const commonTLDs = { 'com': 0, 'net': 1, 'org': 2, 'io': 3 };
-    return commonTLDs[tld] || 4; // 4 = other
-  }
-
-  /**
-   * Encode resource type
-   */
-  encodeResourceType(type) {
-    const types = { 'script': 0, 'image': 1, 'xhr': 2, 'other': 3 };
-    return types[type] || 3;
-  }
-
-  /**
-   * Check if URL has tracking parameters
-   */
-  hasTrackingParams(urlObj) {
-    const trackingParams = ['utm_', 'fbclid', 'gclid', 'mc_', '_ga', 'aff_'];
-    return trackingParams.some(param => 
-      Array.from(urlObj.searchParams.keys()).some(key => key.includes(param))
-    ) ? 1 : 0;
   }
 
   /**
    * Calculate Shannon entropy of string
    */
   calculateEntropy(str) {
+    if (!str) return 0;
     const len = str.length;
     const frequencies = {};
-
-    for (const char of str) {
-      frequencies[char] = (frequencies[char] || 0) + 1;
-    }
-
+    for (const char of str) frequencies[char] = (frequencies[char] || 0) + 1;
+    
     let entropy = 0;
     for (const count of Object.values(frequencies)) {
       const p = count / len;
       entropy -= p * Math.log2(p);
     }
-
-    return entropy;
+    return parseFloat(entropy.toFixed(4));
   }
 
   /**
