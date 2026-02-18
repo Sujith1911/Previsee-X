@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PRIVISEE-X Settings</title>
+  <link rel="stylesheet" href="dashboard.css">
+  <style>
+    .settings-container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    .setting-category {
+      margin-bottom: 2.5rem;
+    }
+
+    .setting-category h2 {
+      font-size: 1.25rem;
+      margin-bottom: 1.5rem;
+      color: var(--text-primary);
+    }
+
+    .setting-item {
+      background: var(--bg-glass);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border-glass);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+      transition: all 0.2s;
+    }
+
+    .setting-item:hover {
+      border-color: rgba(102, 126, 234, 0.3);
+    }
+
+    .setting-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
+
+    .setting-title {
+      font-weight: 600;
+      font-size: 1rem;
+    }
+
+    .setting-description {
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+      line-height: 1.5;
+    }
+
+    .toggle-switch {
+      position: relative;
+      width: 52px;
+      height: 28px;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(255, 255, 255, 0.1);
+      transition: 0.3s;
+      border-radius: 28px;
+      border: 1px solid var(--border-glass);
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 20px;
+      width: 20px;
+      left: 4px;
+      bottom: 3px;
+      background-color: white;
+      transition: 0.3s;
+      border-radius: 50%;
+    }
+
+    .toggle-switch input:checked + .toggle-slider {
+      background: var(--primary-gradient);
+      border-color: transparent;
+    }
+
+    .toggle-switch input:checked + .toggle-slider:before {
+      transform: translateX(24px);
+    }
+
+    .slider-container {
+      margin-top: 1rem;
+    }
+
+    .slider-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.5rem;
+      font-size: 0.875rem;
+    }
+
+    .slider-value {
+      background: var(--bg-glass);
+      padding: 0.25rem 0.75rem;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+
+    .slider-input {
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.1);
+      outline: none;
+      -webkit-appearance: none;
+    }
+
+    .slider-input::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--primary-gradient);
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    .slider-input::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--primary-gradient);
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    .button-group {
+      display: flex;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 0.875rem 1.5rem;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 0.875rem;
+    }
+
+    .btn-primary {
+      background: var(--primary-gradient);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
+    }
+
+    .btn-outline {
+      background: transparent;
+      color: var(--text-primary);
+      border: 1px solid var(--border-glass);
+    }
+
+    .btn-outline:hover {
+      background: var(--bg-glass);
+      transform: translateY(-2px);
+    }
+
+    .info-box {
+      background: rgba(59, 130, 246, 0.1);
+      border-left: 4px solid #3b82f6;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 1rem;
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    .warning-box {
+      background: rgba(239, 68, 68, 0.1);
+      border-left: 4px solid #ef4444;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 1rem;
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-content">
+      <h1>⚙️ Settings</h1>
+      <p>Configure PRIVISEE-X</p>
+    </div>
+    <div class="header-actions">
+      <button class="btn-secondary" id="backBtn">← Back to Dashboard</button>
+    </div>
+  </header>
+
+  <div class="settings-container">
+    <!-- Risk Weights -->
+    <section class="setting-category">
+      <h2>Risk Weight Configuration</h2>
+      <p style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1.5rem;">
+        Adjust how much each factor contributes to the overall risk score. Higher weights mean greater importance.
+      </p>
+
+      <div class="setting-item">
+        <div class="slider-container">
+          <div class="slider-label">
+            <span>Tracker Count Weight</span>
+            <span class="slider-value" id="trackerWeightValue">0.25</span>
+          </div>
+          <input type="range" min="0" max="1" step="0.05" value="0.25" class="slider-input" id="trackerWeight">
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="slider-container">
+          <div class="slider-label">
+            <span>Cookie Weight</span>
+            <span class="slider-value" id="cookieWeightValue">0.20</span>
+          </div>
+          <input type="range" min="0" max="1" step="0.05" value="0.20" class="slider-input" id="cookieWeight">
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="slider-container">
+          <div class="slider-label">
+            <span>Fingerprinting Weight</span>
+            <span class="slider-value" id="fingerprintWeightValue">0.20</span>
+          </div>
+          <input type="range" min="0" max="1" step="0.05" value="0.20" class="slider-input" id="fingerprintWeight">
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="slider-container">
+          <div class="slider-label">
+            <span>Anomaly Detection Weight</span>
+            <span class="slider-value" id="anomalyWeightValue">0.10</span>
+          </div>
+          <input type="range" min="0" max="1" step="0.05" value="0.10" class="slider-input" id="anomalyWeight">
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="slider-container">
+          <div class="slider-label">
+            <span>Third-Party Connections Weight</span>
+            <span class="slider-value" id="thirdPartyWeightValue">0.10</span>
+          </div>
+          <input type="range" min="0" max="1" step="0.05" value="0.10" class="slider-input" id="thirdPartyWeight">
+        </div>
+      </div>
+
+      <div class="button-group">
+        <button class="btn btn-outline" id="resetWeights">Reset to Defaults</button>
+        <button class="btn btn-primary" id="saveWeights">Save Weights</button>
+      </div>
+    </section>
+
+    <!-- Feature Toggles -->
+    <section class="setting-category">
+      <h2>Feature Toggles</h2>
+
+      <div class="setting-item">
+        <div class="setting-header">
+          <div>
+            <div class="setting-title">Tracker Detection</div>
+            <div class="setting-description">Enable real-time tracker detection and blocking analysis</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggleTrackerDetection" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-header">
+          <div>
+            <div class="setting-title">Fingerprinting Detection</div>
+            <div class="setting-description">Monitor and detect browser fingerprinting attempts</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggleFingerprint" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-header">
+          <div>
+            <div class="setting-title">Anomaly Detection</div>
+            <div class="setting-description">Statistical analysis to detect unusual tracking patterns</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggleAnomaly" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-header">
+          <div>
+            <div class="setting-title">Graph Intelligence</div>
+            <div class="setting-description">Build and analyze tracker network graphs</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggleGraph" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- Privacy Settings -->
+    <section class="setting-category">
+      <h2>Privacy & Data</h2>
+
+      <div class="setting-item">
+        <div class="setting-header">
+          <div>
+            <div class="setting-title">Federated Learning (Experimental)</div>
+            <div class="setting-description">Help improve detection models while preserving your privacy</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggleFederatedLearning">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="info-box">
+          ℹ️ Federated learning allows you to contribute to model improvements without sharing raw data. All computations happen locally with differential privacy guarantees (ε=0.1).
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-title">Data Retention</div>
+        <div class="setting-description">How long to keep tracking data</div>
+        <div class="slider-container">
+          <div class="slider-label">
+            <span>Retention Period</span>
+            <span class="slider-value" id="retentionValue">7 days</span>
+          </div>
+          <input type="range" min="1" max="30" step="1" value="7" class="slider-input" id="retentionDays">
+        </div>
+      </div>
+    </section>
+
+    <!-- Data Management -->
+    <section class="setting-category">
+      <h2>Data Management</h2>
+
+      <div class="setting-item">
+        <div class="setting-title">Export Data</div>
+        <div class="setting-description">Download all your privacy data as JSON</div>
+        <div class="button-group">
+          <button class="btn btn-outline" id="exportData">📥 Export All Data</button>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-title">Import Data</div>
+        <div class="setting-description">Import previously exported data</div>
+        <div class="button-group">
+          <button class="btn btn-outline" id="importData">📤 Import Data</button>
+        </div>
+        <input type="file" id="importFile" accept=".json" style="display: none;">
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-title">Clear All Data</div>
+        <div class="setting-description">Permanently delete all tracking data and history</div>
+        <div class="warning-box">
+          ⚠️ Warning: This action cannot be undone. All tracking history, risk scores, and analytics will be permanently deleted.
+        </div>
+        <div class="button-group">
+          <button class="btn btn-danger" id="clearAllData">🗑️ Clear All Data</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- About -->
+    <section class="setting-category">
+      <h2>About</h2>
+      <div class="setting-item">
+        <div class="setting-title">PRIVISEE-X v1.0.0</div>
+        <div class="setting-description">
+          AI-Powered Privacy Intelligence System<br>
+          Zero telemetry • 100% local processing • Open source
+        </div>
+        <div class="info-box">
+          Made with ❤️ for privacy. Licensed under MIT.<br>
+          <a href="https://github.com/Sujith1911/Previsee-X" target="_blank" style="color: #667eea;">View on GitHub</a>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="settings.js"></script>
+</body>
+</html>

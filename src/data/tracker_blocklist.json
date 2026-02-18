@@ -1,0 +1,20 @@
+{
+  "trackers": [
+    { "domain": "doubleclick.net", "category": "advertising" },
+    { "domain": "googleadservices.com", "category": "advertising" },
+    { "domain": "googlesyndication.com", "category": "advertising" },
+    { "domain": "google-analytics.com", "category": "analytics" },
+    { "domain": "googletagmanager.com", "category": "analytics" },
+    { "domain": "facebook.com", "category": "social" },
+    { "domain": "facebook.net", "category": "social" },
+    { "domain": "connect.facebook.net", "category": "social" },
+    { "domain": "twitter.com", "category": "social" },
+    { "domain": "linkedin.com", "category": "social" },
+    { "domain": "hotjar.com", "category": "analytics" },
+    { "domain": "segment.com", "category": "analytics" },
+    { "domain": "mixpanel.com", "category": "analytics" },
+    { "domain": "outbrain.com", "category": "advertising" },
+    { "domain": "taboola.com", "category": "advertising" },
+    { "domain": "fingerprintjs.com", "category": "fingerprinting" }
+  ]
+}

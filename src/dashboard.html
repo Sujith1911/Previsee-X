@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PRIVISEE-X Dashboard</title>
+  <link rel="stylesheet" href="dashboard.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-content">
+      <h1>🛡️ PRIVISEE-X</h1>
+      <p>Privacy Intelligence Dashboard</p>
+    </div>
+    <div class="header-actions">
+      <button class="btn-secondary" id="settingsBtn">⚙️ Settings</button>
+      <button class="btn-secondary" id="exportBtn">📥 Export Data</button>
+      <button class="btn-danger" id="clearBtn">🗑️ Clear All</button>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <div class="container">
+    <!-- Overview Section -->
+    <section class="section overview-section">
+      <h2>Overview</h2>
+      <div class="overview-grid">
+        <!-- Risk Gauge -->
+        <div class="card risk-gauge-card">
+          <h3>Current Site Risk</h3>
+          <div class="risk-gauge-container">
+            <canvas id="riskGauge"></canvas>
+            <div class="risk-gauge-center">
+              <div class="risk-score" id="currentRiskScore">--</div>
+              <div class="risk-level" id="currentRiskLevel">ANALYZING</div>
+            </div>
+          </div>
+          <div class="current-site" id="currentSite">No active site</div>
+        </div>
+
+        <!-- Weekly Trends -->
+        <div class="card trends-card">
+          <h3>Weekly Risk Trends</h3>
+          <canvas id="trendsChart"></canvas>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon">🔍</div>
+            <div class="stat-value" id="totalSites">0</div>
+            <div class="stat-label">Sites Analyzed</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">🚫</div>
+            <div class="stat-value" id="totalTrackers">0</div>
+            <div class="stat-label">Trackers Blocked</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">🍪</div>
+            <div class="stat-value" id="totalCookies">0</div>
+            <div class="stat-label">Cookies Detected</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">🎭</div>
+            <div class="stat-value" id="fingerprintAttempts">0</div>
+            <div class="stat-label">Fingerprint Attempts</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Sites Section -->
+    <section class="section sites-section">
+      <div class="section-header">
+        <h2>Analyzed Sites</h2>
+        <div class="section-controls">
+          <input type="text" id="searchSites" placeholder="🔍 Search sites..." class="search-input">
+          <select id="filterRisk" class="filter-select">
+            <option value="all">All Risk Levels</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="moderate">Moderate</option>
+            <option value="low">Low</option>
+          </select>
+          <select id="sortSites" class="filter-select">
+            <option value="risk">Sort by Risk</option>
+            <option value="trackers">Sort by Trackers</option>
+            <option value="recent">Sort by Recent</option>
+          </select>
+        </div>
+      </div>
+      <div id="sitesContainer" class="sites-container">
+        <div class="loading">Loading sites data...</div>
+      </div>
+    </section>
+
+    <!-- Tracker Network Graph -->
+    <section class="section graph-section">
+      <div class="section-header">
+        <h2>Tracker Network Graph</h2>
+        <button class="btn-secondary" id="refreshGraph">🔄 Refresh</button>
+      </div>
+      <div class="card graph-card">
+        <div id="graphContainer" class="graph-container">
+          <div class="loading">Building graph...</div>
+        </div>
+        <div class="graph-legend">
+          <div class="legend-item">
+            <span class="legend-color" style="background: #667eea;"></span>
+            <span>Websites</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-color" style="background: #ef4444;"></span>
+            <span>Trackers</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-color" style="background: #f97316;"></span>
+            <span>Hub Trackers</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Top Trackers -->
+    <section class="section trackers-section">
+      <h2>Top Trackers</h2>
+      <div id="trackersContainer" class="trackers-container">
+        <div class="loading">Loading tracker data...</div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Site Detail Modal -->
+  <div id="siteModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modalSiteName">Site Details</h2>
+        <button class="modal-close" id="closeModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="detail-section">
+          <h3>Risk Analysis</h3>
+          <div class="detail-grid">
+            <div class="detail-item">
+              <span class="detail-label">Risk Score:</span>
+              <span class="detail-value" id="detailRiskScore">--</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Risk Level:</span>
+              <span class="detail-value" id="detailRiskLevel">--</span>
+            </div>
+          </div>
+          <div class="explanation-box" id="detailExplanation">
+            Loading explanation...
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <h3>Trackers Detected</h3>
+          <div id="detailTrackers" class="detail-list">
+            Loading...
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <h3>Cookies</h3>
+          <div id="detailCookies" class="detail-list">
+            Loading...
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <h3>Fingerprinting</h3>
+          <div id="detailFingerprinting" class="fingerprint-grid">
+            Loading...
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>

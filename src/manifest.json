@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "PRIVISEE-X",
+  "version": "1.0.0",
+  "description": "AI-Powered Privacy Intelligence System - Detect, Analyze, and Explain Web Tracking in Real-Time",
+  "permissions": [
+    "storage",
+    "cookies",
+    "webRequest",
+    "webNavigation",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_page": "dashboard.html",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["models/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
