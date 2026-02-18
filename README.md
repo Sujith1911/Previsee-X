@@ -1,12 +1,13 @@
-# PRIVISEE-X: Production-Grade Privacy Intelligence System
+# PRIVISEE-X v2.0: Production-Grade Privacy Intelligence System
 
 <div align="center">
 
-**AI-Powered Privacy Intelligence - Detect, Analyze, and Explain Web Tracking in Real-Time**
+**Enterprise-Grade Privacy Intelligence for the Consumer Browser**
+*Powered by Zero-Dependency Behavioral AI*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Chrome](https://img.shields.io/badge/Chrome-Manifest%20V3-green.svg)]()
-[![Research Grade](https://img.shields.io/badge/Quality-Research%20Grade-blue.svg)]()
+[![Architecture](https://img.shields.io/badge/Architecture-Modular%20v2.0-blue.svg)]()
 
 </div>
 
@@ -14,294 +15,112 @@
 
 ## 🎯 Overview
 
-PRIVISEE-X is a production-grade, research-quality browser extension that combines **machine learning**, **graph analytics**, and **explainable AI** to detect, analyze, and explain web tracking behavior with **zero external dependencies**.
+PRIVISEE-X is a next-generation browser extension that shifts privacy protection from **reactive blocklists** to **proactive behavioral intelligence**.
 
-### Key Innovations
+Refactored in v2.0 to a modular, event-driven architecture, it operates with **Zero External API Calls** and **Zero Telemetry**, ensuring that user data never leaves the device.
 
-- 🤖 **Hybrid ML Classification**: Random Forest + Blocklist (95%+ accuracy)
-- 📊 **Anomaly Detection**: Statistical z-score analysis for unusual tracking patterns
-- 🎯 **Adaptive Risk Scoring**: Learnable weights with gradient descent
-- 💡 **Explainable AI**: SHAP-like feature importance explanations
-- 🕸️ **Graph Intelligence**: PageRank-based hub identification
-- 🔒 **Privacy-First**: 100% local processing, zero telemetry
-
----
-
-## 🚀 Features
-
-### Core Detection
-
-✅ **Tracker Detection**
-- Hybrid ML + blocklist (500+ known domains)
-- TensorFlow.js Random Forest classifier
-- Confidence scoring (0.0-1.0)
-- Multi-category: advertising, analytics, social, fingerprinting
-
-✅ **Anomaly Detection**
-- Isolation Forest statistical variant
-- Rolling baseline (last 100 sites)
-- Z-score based detection (>2.5σ = anomalous)
-- Explainable anomaly reasons
-
-✅ **Fingerprinting Detection**
-- Canvas, WebGL, Audio API wrapping
-- Font enumeration monitoring
-- Battery, Device Memory, CPU APIs
-- Real-time reporting
-
-### Intelligence Layer
-
-✅ **Risk Scoring**
-- Adaptive weighted scoring: Risk = Σ wi × fi(x)
-- Learnable weights via user feedback
-- 0-100 calibrated scores
-- Levels: Low, Moderate, High, Critical
-
-✅ **Explainability**
-- Feature importance (SHAP-like)
-- Plain-language explanations
-- Actionable recommendations
-- Contribution breakdown
-
-✅ **Graph Analysis**
-- Domain co-occurrence graph
-- PageRank centrality
-- Hub identification
-- D3.js visualization
-
-### Storage & Performance
-
-✅ **High-Performance Storage**
-- IndexedDB with LRU caching
-- Indexed queries
-- Bulk operations
-- 7-day auto-cleanup
-
-✅ **Optimized Performance**
-- CPU < 3% (idle <1%)
-- Memory < 100MB
-- <5ms request processing
-- O(n) complexity
+### Key Capabilities v2.0
+- 🧠 **Hybrid ML Core**: Random Forest + Isolation Forest running client-side (<1ms latency).
+- 🕸️ **Graph Intelligence**: PageRank analysis of third-party tracker networks.
+- 🛡️ **Adaptive Risk Scoring**: Learnable, weighted privacy scores (0-100).
+- 🔍 **Security Auditing**: Real-time analysis of CSP, HSTS, and HTTP headers.
+- 💡 **Explainable AI**: Plain-language explanations of *why* a site is risky.
 
 ---
 
-## 📁 Architecture
+## 🏗️ Architecture: The "Six-Engine" Design
 
-```
-privisee-x/
-├── src/
-│   ├── manifest.json           # Manifest V3 config
-│   ├── background.js           # Service worker orchestration
-│   ├── content.js              # Fingerprint detection
-│   ├── modules/
-│   │   ├── storageEngine.js    # IndexedDB + caching
-│   │   ├── trackerDetector.js  # ML + blocklist hybrid
-│   │   ├── anomalyDetector.js  # Statistical anomaly
-│   │   ├── riskEngine.js       # Adaptive scoring
-│   │   ├── explainabilityEngine.js  # SHAP-like
-│   │   └── graphEngine.js      # PageRank analysis
-│   ├── ui/                     # Dashboard & popup
-│   └── data/                   # Tracker blocklists
-├── ml/                         # Python training scripts
-├── models/                     # TensorFlow.js models
-└── docs/                       # Documentation
+The system is built on a clean, decoupled architecture (`src/core`, `src/detectors`, etc.) orchestrated by a central **EventBus**.
 
-```
+### 1. Detection Engines
+*   **Tracker Detector**: Hybrid engine using O(1) blocklists + Random Forest ML for unknown domains. Feature extraction analyzes URL entropy, structure, and context.
+*   **Anomaly Detector**: Statistical engine (Isolation Forest) monitoring browsing behavior deviations (e.g., cookie spikes).
+*   **Fingerprint Detector**: Heuristic engine hooking sensitive APIs (Canvas, Audio, WebGL) to detect fingerprinting attempts.
+
+### 2. Intelligence Engines
+*   **Risk Engine**: Aggregates signals into a normalized risk score. Supports dynamic weight adjustments via `WeightManager`.
+*   **Explainability Engine**: Deconstructs risk scores into human-readable factors (SHAP-like contribution analysis).
+*   **Graph Engine**: Builds a directed graph of third-party connections and computes centrality metrics to identify hubs.
+
+### 3. Foundation
+*   **Storage Manager**: IndexedDB wrapper with LRU caching and auto-cleanup.
+*   **Model Loader**: Abstracted inference engine ensuring performance budgets (<3% CPU).
 
 ---
 
-## 🔧 Installation
+## 🤖 ML Methodology: How We Built It
 
-### For Users (Coming Soon)
-Chrome Web Store link will be available after publication.
+The AI models were trained using a custom-built pipeline (`ml/`) on real-world data.
 
-### For Developers
+### 1. The Datasets
+We aggregated ~20,000 labeled samples from five public sources:
+*   **EasyList**: Advertising domains.
+*   **EasyPrivacy**: Tracking & Analytics domains.
+*   **Disconnect.me**: Categorized tracker list.
+*   **DuckDuckGo Tracker Radar**: Prevalence and category data.
+*   **Tranco Top-1M**: Benign site baseline.
 
-```bash
-# Clone repository
-git clone https://github.com/Sujith1911/Previsee-X.git
-cd privisee-x
+*Source: Downloaded programmatically via `ml/build_dataset.py`.*
 
-# Load extension
-1. Open chrome://extensions/
-2. Enable "Developer mode"
-3. Click "Load unpacked"
-4. Select privisee-x/src/ folder
-```
+### 2. Feature Engineering
+We extract a **13-dimensional feature vector** from every network request:
+1.  **Entropy**: Shannon entropy of the domain string.
+2.  **Structure**: Subdomain count, path depth, query parameter count.
+3.  **Content**: Presence of tracking params (`utm_`, `fbclid`), resource type.
+4.  **Lexical**: Digit ratio, special char ratio, token count.
+
+### 3. Model Training
+*   **Random Forest**: 200 Decision Trees, trained with class balancing.
+*   **Isolation Forest**: 100 Estimators for anomaly detection baseline.
+*   **Optimization**: Converted to a custom quantized JSON format for efficient JS inference.
 
 ---
 
-## 🤖 ML Model Training
+## 🚀 Installation
 
-### Prerequisites
+### Development Build
+1.  Clone the repository:
+    ```bash
+    git clone https://github.com/Sujith1911/Previsee-X.git
+    cd Privisee-x
+    ```
+2.  Open Chrome and go to `chrome://extensions/`.
+3.  Enable **Developer mode**.
+4.  Click **Load unpacked** and select the `src/` directory.
 
+### ML Pipeline (Optional)
+To retrain the models:
 ```bash
 pip install -r ml/requirements.txt
-```
-
-### Train Random Forest Classifier
-
-```python
-python ml/train_random_forest.py
-```
-
-### Convert to TensorFlow.js
-
-```python
-python ml/convert_to_tfjs.py
+python ml/run_all.py
 ```
 
 ---
 
-## 📊 Risk Scoring Methodology
-
-### Formula
+## 📁 Project Structure
 
 ```
-Risk = Σ wi × fi(x)
-
-where:
-- wi = learned weight for feature i
-- fi(x) = normalized feature value
-```
-
-### Default Weights
-
-| Feature | Weight | Description |
-|---------|--------|-------------|
-| Trackers | 0.25 | Number and category of trackers |
-| Cookies | 0.20 | Third-party, lifetime, security |
-| Fingerprinting | 0.20 | Canvas, WebGL, Audio |
-| Anomaly | 0.10 | Statistical deviation |
-| Third-Party | 0.10 | Connection count |
-| HTTPS | 0.10 | Encryption status |
-| Malicious | 0.05 | Known bad domains |
-
-### Risk Levels
-
-- **Low (0-25)**: 🟢 Minimal privacy concerns
-- **Moderate (25-50)**: 🟡 Some tracking detected
-- **High (50-75)**: 🟠 Significant privacy risks
-- **Critical (75-100)**: 🔴 Extreme tracking/malicious
-
----
-
-## 🔒 Privacy Guarantees
-
-### Zero External Communication
-- No API calls for analysis
-- No telemetry or analytics
-- No crash reporting
-- No external model updates
-
-### Local-Only Processing
-- All ML inference client-side
-- IndexedDB sandboxed storage
-- In-memory caching
-- Automatic data cleanup (7 days)
-
-### Optional Federated Learning
-- **Opt-in only** (disabled by default)
-- Differential privacy (Laplace noise, ε=0.1)
-- Gradient clipping
-- Never shares raw data
-
----
-
-## 📈 Performance Benchmarks
-
-| Metric | Target | Actual |
-|--------|--------|--------|
-| CPU (Idle) | <1% | 0.8% |
-| CPU (Active) | <3% | 2.1% |
-| Memory | <100MB | 62MB |
-| Request Processing | <5ms | 3ms |
-| Risk Calculation | <10ms | 7ms |
-| Dashboard Load | <500ms | 412ms |
-
-_Tested on Chrome 120, Windows 11, i7-10700K_
-
----
-
-## 🧪 Research & Publications
-
-PRIVISEE-X is research-grade software suitable for academic publication.
-
-### Citation
-
-```bibtex
-@software{privisee_x_2026,
-  title={PRIVISEE-X: AI-Powered Privacy Intelligence System},
-  author={Sujith1911},
-  year={2026},
-  url={https://github.com/Sujith1911/Previsee-X}
-}
-```
-
----
-
-## 🛠️ Development
-
-### Module Architecture
-
-Each module is independent and testable:
-
-1. **Storage Engine**: IndexedDB wrapper
-2. **Tracker Detector**: ML classification
-3. **Anomaly Detector**: Statistical analysis
-4. **Risk Engine**: Weighted scoring
-5. **Explainability Engine**: Feature importance
-6. **Graph Engine**: Network analysis
-
-### Adding New Trackers
-
-Edit `src/data/tracker_blocklist.json`:
-
-```json
-{
-  "trackers": [
-    {
-      "domain": "example-tracker.com",
-      "category": "advertising"
-    }
-  ]
-}
+src/
+├── core/           # Base classes, EventBus, Logger
+├── detectors/      # Logic engines (Tracker, Anomaly, Fingerprint)
+├── risk/           # Risk scoring logic
+├── graph/          # Network analysis
+├── explainability/ # XAI logic
+├── security/       # Security headers audit
+├── storage/        # IndexedDB wrapper
+├── models/         # ML models & loader
+├── ui/             # Dashboard & Popup controllers
+├── background.js   # Central Orchestrator
+└── ...
 ```
 
 ---
 
 ## 📜 License
-
-MIT License - See [LICENSE](LICENSE) for details
-
----
-
-## 🤝 Contributing
-
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md)
-
----
-
-## 📞 Contact
-
-- **Issues**: [GitHub Issues](https://github.com/Sujith1911/Previsee-X/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/Sujith1911/Previsee-X/discussions)
-
----
-
-## 🙏 Acknowledgments
-
-- **TensorFlow.js** - Client-side ML
-- **Chart.js & D3.js** - Visualizations
-- **EasyList** - Tracker domains
-- **Privacy community** - Feedback and support
+MIT License - See [LICENSE](LICENSE) for details.
 
 ---
 
 <div align="center">
-
-**Built for Privacy, Powered by AI**
-
-*Zero infrastructure cost. Zero data collection. 100% open source.*
-
+<b>Built for Privacy. Powered by AI.</b>
 </div>
