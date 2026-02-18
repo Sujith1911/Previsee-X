@@ -1,4 +1,4 @@
-# PRIVISEE-X v2.0: Production-Grade Privacy Intelligence System
+# PRIVISEE-X v2.1: Production-Grade Privacy Intelligence System
 
 <div align="center">
 
@@ -7,7 +7,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Chrome](https://img.shields.io/badge/Chrome-Manifest%20V3-green.svg)]()
-[![Architecture](https://img.shields.io/badge/Architecture-Modular%20v2.0-blue.svg)]()
+[![Architecture](https://img.shields.io/badge/Architecture-Modular%20v2.1-blue.svg)]()
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
 
 </div>
 
@@ -17,14 +18,14 @@
 
 PRIVISEE-X is a next-generation browser extension that shifts privacy protection from **reactive blocklists** to **proactive behavioral intelligence**.
 
-Refactored in v2.0 to a modular, event-driven architecture, it operates with **Zero External API Calls** and **Zero Telemetry**, ensuring that user data never leaves the device.
+Refactored in v2.1 to a modular, event-driven architecture, it operates with **Zero External API Calls** and **Zero Telemetry**, ensuring that user data never leaves the device.
 
-### Key Capabilities v2.0
+### Key Capabilities
 - 🧠 **Hybrid ML Core**: Random Forest + Isolation Forest running client-side (<1ms latency).
-- 🕸️ **Graph Intelligence**: PageRank analysis of third-party tracker networks.
+- 🕸️ **Graph Intelligence**: PageRank analysis and **Community Detection** of third-party tracker networks.
 - 🛡️ **Adaptive Risk Scoring**: Learnable, weighted privacy scores (0-100).
-- 🔍 **Security Auditing**: Real-time analysis of CSP, HSTS, and HTTP headers.
-- 💡 **Explainable AI**: Plain-language explanations of *why* a site is risky.
+- 🔍 **Security & Dark Pattern Auditing**: Real-time analysis of CSP, HSTS, and manipulative UI text.
+- 🧪 **Enterprise Reliability**: Full unit testing suite and CI/CD pipelines.
 
 ---
 
@@ -33,14 +34,15 @@ Refactored in v2.0 to a modular, event-driven architecture, it operates with **Z
 The system is built on a clean, decoupled architecture (`src/core`, `src/detectors`, etc.) orchestrated by a central **EventBus**.
 
 ### 1. Detection Engines
-*   **Tracker Detector**: Hybrid engine using O(1) blocklists + Random Forest ML for unknown domains. Feature extraction analyzes URL entropy, structure, and context.
+*   **Tracker Detector**: Hybrid engine using O(1) blocklists + Random Forest ML for unknown domains.
 *   **Anomaly Detector**: Statistical engine (Isolation Forest) monitoring browsing behavior deviations (e.g., cookie spikes).
 *   **Fingerprint Detector**: Heuristic engine hooking sensitive APIs (Canvas, Audio, WebGL) to detect fingerprinting attempts.
 
 ### 2. Intelligence Engines
 *   **Risk Engine**: Aggregates signals into a normalized risk score. Supports dynamic weight adjustments via `WeightManager`.
+*   **Graph Engine**: Builds a directed graph of third-party connections. Uses **PageRank** to find hubs and **Label Propagation** for community detection.
+*   **Security Audit Engine**: Detects missing security headers and **Dark Patterns** (e.g., "Only 1 left!").
 *   **Explainability Engine**: Deconstructs risk scores into human-readable factors (SHAP-like contribution analysis).
-*   **Graph Engine**: Builds a directed graph of third-party connections and computes centrality metrics to identify hubs.
 
 ### 3. Foundation
 *   **Storage Manager**: IndexedDB wrapper with LRU caching and auto-cleanup.
@@ -48,31 +50,37 @@ The system is built on a clean, decoupled architecture (`src/core`, `src/detecto
 
 ---
 
-## 🤖 ML Methodology: How We Built It
+## 🛠️ Testing & DevOps
 
-The AI models were trained using a custom-built pipeline (`ml/`) on real-world data.
+We enforce enterprise-grade quality standards with a custom zero-dependency test infrastructure.
+
+### Testing
+*   **Runner**: Custom lightweight runner (`tests/runner.js`) ensuring stability without heavy node_modules.
+*   **Unit Tests**: Covering `RiskEngine` logic and `GraphEngine` algorithms.
+*   **Run Tests**:
+    ```bash
+    node tests/main.js
+    ```
+
+### CI/CD
+*   **GitHub Actions**: Automated workflow (`.github/workflows/ci.yml`) runs tests on every push/PR.
+*   **Build Scripts**: Package the extension for Chrome/Edge/Firefox via `node scripts/build.js`.
+
+---
+
+## 🤖 ML Methodology
+
+The AI models were trained using a custom-built pipeline (`ml/`) on real-world data (EasyList, Tranco Top-1M).
 
 ### 1. The Datasets
-We aggregated ~20,000 labeled samples from five public sources:
-*   **EasyList**: Advertising domains.
-*   **EasyPrivacy**: Tracking & Analytics domains.
-*   **Disconnect.me**: Categorized tracker list.
-*   **DuckDuckGo Tracker Radar**: Prevalence and category data.
-*   **Tranco Top-1M**: Benign site baseline.
-
-*Source: Downloaded programmatically via `ml/build_dataset.py`.*
+~20,000 labeled samples from multiple public privacy lists.
 
 ### 2. Feature Engineering
-We extract a **13-dimensional feature vector** from every network request:
-1.  **Entropy**: Shannon entropy of the domain string.
-2.  **Structure**: Subdomain count, path depth, query parameter count.
-3.  **Content**: Presence of tracking params (`utm_`, `fbclid`), resource type.
-4.  **Lexical**: Digit ratio, special char ratio, token count.
+We extract a **13-dimensional feature vector** from every request (Entropy, Token counts, Tracking params).
 
 ### 3. Model Training
-*   **Random Forest**: 200 Decision Trees, trained with class balancing.
-*   **Isolation Forest**: 100 Estimators for anomaly detection baseline.
-*   **Optimization**: Converted to a custom quantized JSON format for efficient JS inference.
+*   **Random Forest**: 200 Decision Trees.
+*   **Optimization**: Custom quantized JSON format for efficient JS inference.
 
 ---
 
@@ -104,14 +112,17 @@ src/
 ├── core/           # Base classes, EventBus, Logger
 ├── detectors/      # Logic engines (Tracker, Anomaly, Fingerprint)
 ├── risk/           # Risk scoring logic
-├── graph/          # Network analysis
+├── graph/          # Network analysis & Community Detection
 ├── explainability/ # XAI logic
-├── security/       # Security headers audit
+├── security/       # Security headers & Dark Pattern audit
 ├── storage/        # IndexedDB wrapper
 ├── models/         # ML models & loader
 ├── ui/             # Dashboard & Popup controllers
 ├── background.js   # Central Orchestrator
 └── ...
+tests/              # Unit & Integration tests
+scripts/            # Build & Packaging tools
+docs/               # Threat Model & API references
 ```
 
 ---
