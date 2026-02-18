@@ -74,9 +74,6 @@ export class GraphEngine extends EngineBase {
     });
   }
 
-    });
-  }
-
   /**
    * Community Detection (Label Propagation)
    * Identifies clusters of trackers that often appear together
