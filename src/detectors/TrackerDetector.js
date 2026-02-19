@@ -27,8 +27,7 @@ export class TrackerDetector extends EngineBase {
       data.trackers.forEach(t => this.blocklist.add(t.domain));
       this.logger.info(`Loaded ${this.blocklist.size} known trackers`);
       
-      // Load ML Model
-      await modelLoader.loadModel('rf_tracker_classifier', 'models/tracker_classifier.json');
+      await modelLoader.loadModel('rf_tracker_classifier', 'models/tracker_classifier/model.json');
     } catch (e) {
       this.logger.error('Failed to init resources:', e);
     }

@@ -32,7 +32,7 @@
   "options_page": "dashboard.html",
   "web_accessible_resources": [
     {
-      "resources": ["models/*"],
+      "resources": ["models/*", "models/tracker_classifier/*"],
       "matches": ["<all_urls>"]
     }
   ]
