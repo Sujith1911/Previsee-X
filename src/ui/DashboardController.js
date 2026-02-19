@@ -27,7 +27,32 @@ export class DashboardController {
   }
 
   setupListeners() {
-    document.getElementById('refresh-btn')?.addEventListener('click', () => this.render());
+    // Navigation
+    document.getElementById('settingsBtn')?.addEventListener('click', () => {
+      if (chrome.runtime.openOptionsPage) {
+        chrome.runtime.openOptionsPage();
+      } else {
+        window.open('settings.html');
+      }
+    });
+
+    // Actions
+    document.getElementById('exportBtn')?.addEventListener('click', () => this.handleExport());
+    document.getElementById('clearBtn')?.addEventListener('click', () => this.handleClear());
+    document.getElementById('refreshGraph')?.addEventListener('click', () => this.render());
+  }
+
+  async handleExport() {
+    // Placeholder for export functionality
+    console.log('Export requested');
+  }
+
+  async handleClear() {
+     if (confirm('Are you sure you want to clear all data?')) {
+       // Placeholder for clear functionality
+       console.log('Clear requested');
+       this.render();
+     }
   }
 
   async render() {
