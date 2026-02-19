@@ -23,15 +23,29 @@ export class PopupController {
   }
 
   async renderTabStats(tab) {
+    // Show content, hide loading
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+
     const domain = new URL(tab.url).hostname;
-    document.getElementById('current-site').textContent = domain;
+    const siteEl = document.getElementById('currentSite');
+    if (siteEl) siteEl.textContent = domain;
     
     // Request stats from background
     chrome.runtime.sendMessage({ action: 'GET_TAB_STATS', tabId: tab.id }, stats => {
         if (stats) {
-            document.getElementById('tracker-count').textContent = stats.trackersBlocked || 0;
-            document.getElementById('risk-score').textContent = stats.riskScore || 'Low';
+            document.getElementById('trackerCount').textContent = (stats.trackersBlocked || 0).toString();
+            document.getElementById('riskScore').textContent = (stats.riskScore || 'Low').toString();
         }
+    });
+
+    // Dashboard Navigation
+    document.getElementById('dashboardBtn')?.addEventListener('click', () => {
+      if (chrome.runtime.openOptionsPage) {
+        chrome.runtime.openOptionsPage();
+      } else {
+        window.open('dashboard.html');
+      }
     });
   }
 }

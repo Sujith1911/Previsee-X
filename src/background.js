@@ -82,11 +82,12 @@ chrome.webRequest.onBeforeRequest.addListener(
     });
 
     if (result.isTracker) {
-        return { cancel: true }; // Block
+        // In MV3, we cannot block request synchronously here without 'declarativeNetRequest'.
+        // For now, we just log/record it. To actually block, we need to use DNR API.
+        console.log('Would block tracker:', details.url);
     }
   },
-  { urls: ["<all_urls>"] },
-  ["blocking"]
+  { urls: ["<all_urls>"] }
 );
 
 // Tab Updates (For Anomaly & Security Checks)
@@ -132,6 +133,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
          sendResponse({ success: true });
       }
       
+      else if (message.type === 'FINGERPRINT_DETECTED') {
+        if (engines.fingerprint) {
+            await engines.fingerprint.execute(message.data);
+        }
+        sendResponse({ received: true });
+      }
+
       else {
         sendResponse(null);
       }
