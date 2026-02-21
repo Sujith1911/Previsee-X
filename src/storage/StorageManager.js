@@ -11,7 +11,7 @@
 import { createLogger } from '../core/Logger.js';
 
 const DB_NAME    = 'PriviseeX_DB';
-const DB_VERSION = 6; // v6: added 'models' store for ML/anomaly baseline persistence
+const DB_VERSION = 7; // v7: added 'behavioralFingerprints' + 'riskProjections' stores for v2.0
 
 export class StorageManager {
   constructor() {
@@ -88,6 +88,21 @@ export class StorageManager {
         if (!db.objectStoreNames.contains('models')) {
           db.createObjectStore('models', { keyPath: 'key' });
           this.logger.info('Created "models" store for ML baseline persistence');
+        }
+
+        // ── Behavioral Fingerprints store (v7) ───────────────────────────────
+        if (!db.objectStoreNames.contains('behavioralFingerprints')) {
+          const bfStore = db.createObjectStore('behavioralFingerprints', { keyPath: 'domain' });
+          bfStore.createIndex('lastUpdated',  'lastUpdated',  { unique: false });
+          bfStore.createIndex('clusterMatch', 'clusterMatch', { unique: false });
+          this.logger.info('Created "behavioralFingerprints" store');
+        }
+
+        // ── Risk Projections store (v7) ─────────────────────────────────────
+        if (!db.objectStoreNames.contains('riskProjections')) {
+          const rpStore = db.createObjectStore('riskProjections', { keyPath: 'domain' });
+          rpStore.createIndex('projectedAt', 'projectedAt', { unique: false });
+          this.logger.info('Created "riskProjections" store');
         }
       };
     });

@@ -11,6 +11,8 @@
     "scripting",
     "tabs",
     "alarms",
+    "clipboardRead",
+    "clipboardWrite",
     "declarativeNetRequest",
     "declarativeNetRequestFeedback",
     "declarativeNetRequestWithHostAccess"

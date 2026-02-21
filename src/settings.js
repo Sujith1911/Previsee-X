@@ -17,6 +17,9 @@ const DEFAULT_CONFIG = {
     fingerprintDetection: true,
     anomalyDetection: true,
     graphIntelligence: true,
+    staticIntelligence: true,   // v2.0: Static score via onHeadersReceived
+    threatProjection: true,     // v2.0: 30-day risk projection
+    researchMode: false,        // v2.0: Research mode (raw data export)
     federatedLearning: false
   },
   retentionDays: 7
@@ -86,16 +89,21 @@ function updateDisplay() {
   document.getElementById('thirdPartyWeight').value = currentConfig.weights.thirdParty;
   document.getElementById('thirdPartyWeightValue').textContent = currentConfig.weights.thirdParty.toFixed(2);
 
-  // Feature toggles
   document.getElementById('toggleTrackerDetection').checked = currentConfig.features.trackerDetection;
   document.getElementById('toggleFingerprint').checked = currentConfig.features.fingerprintDetection;
   document.getElementById('toggleAnomaly').checked = currentConfig.features.anomalyDetection;
   document.getElementById('toggleGraph').checked = currentConfig.features.graphIntelligence;
+  document.getElementById('toggleStaticIntelligence').checked = currentConfig.features.staticIntelligence ?? true;
+  document.getElementById('toggleThreatProjection').checked  = currentConfig.features.threatProjection ?? true;
+  document.getElementById('toggleResearchMode').checked      = currentConfig.features.researchMode ?? false;
   document.getElementById('toggleFederatedLearning').checked = currentConfig.features.federatedLearning;
 
   // Retention
   document.getElementById('retentionDays').value = currentConfig.retentionDays;
   document.getElementById('retentionValue').textContent = `${currentConfig.retentionDays} days`;
+
+  // Load trusted domains list
+  loadTrustedDomains();
 }
 
 /**
@@ -139,19 +147,38 @@ function setupEventListeners() {
 
   // Feature toggles
   const toggles = [
-    { id: 'toggleTrackerDetection', key: 'trackerDetection' },
-    { id: 'toggleFingerprint', key: 'fingerprintDetection' },
-    { id: 'toggleAnomaly', key: 'anomalyDetection' },
-    { id: 'toggleGraph', key: 'graphIntelligence' },
-    { id: 'toggleFederatedLearning', key: 'federatedLearning' }
+    { id: 'toggleTrackerDetection',  key: 'trackerDetection' },
+    { id: 'toggleFingerprint',        key: 'fingerprintDetection' },
+    { id: 'toggleAnomaly',            key: 'anomalyDetection' },
+    { id: 'toggleGraph',              key: 'graphIntelligence' },
+    { id: 'toggleStaticIntelligence', key: 'staticIntelligence' },
+    { id: 'toggleThreatProjection',   key: 'threatProjection' },
+    { id: 'toggleResearchMode',       key: 'researchMode' },
+    { id: 'toggleFederatedLearning',  key: 'federatedLearning' }
   ];
 
   toggles.forEach(toggle => {
-    document.getElementById(toggle.id).addEventListener('change', async (e) => {
+    const el = document.getElementById(toggle.id);
+    if (!el) return;
+    el.addEventListener('change', async (e) => {
       currentConfig.features[toggle.key] = e.target.checked;
+      // Mirror research mode into chrome.storage.local for popup access
+      if (toggle.key === 'researchMode') {
+        await chrome.storage.local.set({ researchModeEnabled: e.target.checked });
+      }
       await saveSettings();
     });
   });
+
+  // Trusted Domains — clear all trust
+  document.getElementById('clearAllTrust')?.addEventListener('click', async () => {
+    if (!confirm('Remove trust from all trusted domains?')) return;
+    await chrome.storage.local.set({ trustedDomains: {} });
+    await chrome.runtime.sendMessage({ action: 'RELOAD_TRUSTED_DOMAINS' });
+    showNotification('All trusted domains cleared', 'info');
+    loadTrustedDomains();
+  });
+
 
   // Retention days
   document.getElementById('retentionDays').addEventListener('input', (e) => {
@@ -189,7 +216,7 @@ async function exportData() {
     }
 
     const exportData = {
-      version: '1.0.0',
+      version: '2.0.0',
       exportDate: new Date().toISOString(),
       config: currentConfig,
       sites: response.sites,
@@ -263,6 +290,41 @@ async function handleImport(event) {
   // Reset file input
   event.target.value = '';
 }
+
+/**
+ * Load & display trusted domains
+ */
+async function loadTrustedDomains() {
+  const listEl = document.getElementById('trustedDomainsList');
+  if (!listEl) return;
+  try {
+    const store = await chrome.storage.local.get('trustedDomains');
+    const trusted = store.trustedDomains || {};
+    const domains = Object.keys(trusted);
+    if (!domains.length) {
+      listEl.innerHTML = '<span style="color:#64748b;font-size:12px">No trusted domains</span>';
+      return;
+    }
+    listEl.innerHTML = domains.map(d => `
+      <div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
+        <span style="font-size:13px;flex:1">✅ ${d}</span>
+        <button onclick="untrustDomain('${d}')" style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#ef4444;padding:2px 8px;border-radius:5px;cursor:pointer;font-size:11px">Remove</button>
+      </div>
+    `).join('');
+  } catch(e) {
+    console.warn('[Settings] loadTrustedDomains error:', e);
+  }
+}
+
+window.untrustDomain = async function(domain) {
+  const store = await chrome.storage.local.get('trustedDomains');
+  const trusted = store.trustedDomains || {};
+  delete trusted[domain];
+  await chrome.storage.local.set({ trustedDomains: trusted });
+  await chrome.runtime.sendMessage({ action: 'UNTRUST_DOMAIN', domain });
+  showNotification(`Removed trust: ${domain}`, 'info');
+  loadTrustedDomains();
+};
 
 /**
  * Clear all data

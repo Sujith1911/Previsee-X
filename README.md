@@ -1,288 +1,259 @@
-# PRIVISEE-X: Privacy Intelligence Engine
+# PRIVISEE-X: Explainable Behavioral Privacy Intelligence
 
-**Enterprise-Grade, Client-Side Privacy Intelligence for the Modern Web**
-*Zero Telemetry | Zero External Dependencies | <1ms Latency*
+**Multi-Layer Client-Side Privacy Intelligence for the Modern Web**  
+*Zero Telemetry · Zero External Dependencies · <1ms Latency · MV3 Compliant*
 
-[License: MIT](https://opensource.org/licenses/MIT) | [Chrome Manifest V3](https://developer.chrome.com/docs/extensions/mv3/intro/) | [Architecture: Modular v2.1](https://github.com/Sujith1911/Previsee-X)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-green.svg)](https://developer.chrome.com/docs/extensions/mv3/)
+[![Version](https://img.shields.io/badge/Version-2.0.0-purple.svg)](https://github.com/Sujith1911/Previsee-X)
+
+---
+
+## What PRIVISEE-X Does
+
+PRIVISEE-X is a Chrome extension that watches every website you visit and assigns it a **real-time risk score** — not from a static list, but from live behavioral analysis. Unlike blockers that rely on filter lists alone, PRIVISEE-X scores every site across four dimensions and explains *why* it's risky.
 
 ---
 
 ## Table of Contents
 
-1.  [Executive Summary](#executive-summary)
-2.  [System Architecture](#system-architecture)
-    *   [The "Six-Engine" Design](#the-six-engine-design)
-    *   [Event-Driven Core](#event-driven-core)
-3.  [Machine Learning Methodology](#machine-learning-methodology)
-    *   [Data Acquisition Strategy](#data-acquisition-strategy)
-    *   [Feature Engineering](#feature-engineering)
-    *   [Model Training Pipeline](#model-training-pipeline)
-    *   [Inference Optimization](#inference-optimization)
-4.  [Advanced Intelligence Capabilities](#advanced-intelligence-capabilities)
-    *   [Graph Intelligence (PageRank & Communities)](#graph-intelligence-pagerank--communities)
-    *   [Adaptive Risk Scoring](#adaptive-risk-scoring)
-    *   [Security & Dark Pattern Auditing](#security--dark-pattern-auditing)
-5.  [Developer Guide](#developer-guide)
-    *   [Installation & Setup](#installation--setup)
-    *   [Running Tests](#running-tests)
-    *   [Building for Production](#building-for-production)
-6.  [File Structure & Organization](#file-structure--organization)
+1. [v2.0 Feature Overview](#v20-feature-overview)
+2. [Risk Engine Architecture](#risk-engine-architecture)
+3. [Behavioral DNA System](#behavioral-dna-system)
+4. [Threat Projection](#threat-projection)
+5. [Machine Learning Pipeline](#machine-learning-pipeline)
+6. [Installation & Setup](#installation--setup)
+7. [Using the Extension](#using-the-extension)
+8. [File Structure](#file-structure)
+9. [Privacy Guarantee](#privacy-guarantee)
 
 ---
 
-## 1. Executive Summary
+## v2.0 Feature Overview
 
-**PRIVISEE-X** represents a significant advancement in browser privacy technology. Unlike traditional blocking solutions that rely solely on static filter lists—which are reactive and often circumvented—PRIVISEE-X employs a **proactive, behavioral AI approach**.
-
-The system utilizes a specialized **Random Forest** model running directly within the browser's extension process to classify network requests in real-time. This capability is augmented by **Graph Algorithms** for detecting sophisticated tracker networks and **Statistical Anomaly Detection** for identifying irregular site behaviors. All data processing occurs locally on the user's device, ensuring complete data sovereignty and privacy.
-
----
-
-## 2. System Architecture
-
-The system is built upon a **Modular V2.1 Architecture**, engineered for scalability, testability, and high performance.
-
-### The "Six-Engine" Design
-
-Logic is decoupled into six distinct "Engines," each inheriting from a standardized `EngineBase` class (`src/core/EngineBase.js`).
-
-1.  **Tracker Detector** (`src/detectors/TrackerDetector.js`)
-    *   **Role**: Primary defense mechanism.
-    *   **Logic**: Hybrid Approach.
-        *   **Layer 1**: O(1) Lookup against a compressed Blocklist (EasyList subset).
-        *   **Layer 2**: Feature extraction (13 dimensions) and ML Inference for unknown domains.
-    *   **Output**: Classification (Benign, Advertising, Analytics, Fingerprinting).
-
-2.  **Anomaly Detector** (`src/detectors/AnomalyDetector.js`)
-    *   **Role**: Behavioral integrity monitor.
-    *   **Logic**: Utilizes **Isolation Forest** principles. Maintains a rolling baseline of site behavior (e.g., cookie volume, request frequency).
-    *   **Trigger**: Flags sites deviating more than 3 standard deviations from the user's personal baseline.
-
-3.  **Fingerprint Detector** (`src/detectors/FingerprintDetector.js`)
-    *   **Role**: Heuristic identification of device fingerprinting attempts.
-    *   **Logic**: Monitors sensitive browser APIs via `content.js`:
-        *   `HTMLCanvasElement.toDataURL`
-        *   `AudioContext.createOscillator`
-        *   `WebGLRenderingContext.getParameter`
-    *   **Output**: Real-time alerts regarding suspicious API usage patterns.
-
-4.  **Risk Engine** (`src/risk/RiskEngine.js`)
-    *   **Role**: Central decision engine.
-    *   **Logic**: Aggregates signals from all other engines using a weighted scoring formula:
-        `Risk = Sum(weight_i * factor_i)`
-        (Where `weight` represents configurable importance and `factor` represents detected threats like tracker count or anomaly score).
-    *   **Output**: Normalized Risk Score (0-100) and Label (LOW, HIGH, CRITICAL).
-
-5.  **Graph Engine** (`src/graph/GraphEngine.js`)
-    *   **Role**: Network analysis.
-    *   **Logic**: Constructs a directed graph where nodes are domains and edges are network requests.
-    *   **Algorithms**:
-        *   **PageRank**: Identifies "Hub" trackers (central nodes in the tracking network).
-        *   **Community Detection**: Uses Label Propagation to identify clusters of colluding trackers.
-
-6.  **Security Audit Engine** (`src/security/SecurityAuditEngine.js`)
-    *   **Role**: Site security analysis.
-    *   **Logic**:
-        *   **Headers**: Validates `Content-Security-Policy`, `HSTS`, `X-Frame-Options`.
-        *   **Dark Patterns**: Scans DOM text for manipulative UI patterns (e.g., false urgency, confirm-shaming).
-
-### Life of a Request: Step-by-Step
-
-To illustrate the system operation, consider the lifecycle of a single network request:
-
-1.  **Intercept**: Chrome triggers `chrome.webRequest.onBeforeRequest`.
-2.  **Filter**: `TrackerDetector` checks the URL against the O(1) Blocklist.
-    *   *Match?* Block immediately.
-3.  **Extract features**: If unknown, `FeatureUtils` calculates the 13-dimensional feature vector (Entropy, Token Count, etc.).
-4.  **Inference**: The `ModelLoader` executes the Random Forest model.
-    *   *Latency Check*: If inference exceeds 2ms, the system fails-open to preserve User Experience.
-5.  **Decision**:
-    *   *Prediction*: "Advertising" (Confidence: 0.85).
-    *   *Action*: Block request.
-6.  **Event**: `TRACKER_DETECTED` event is emitted on the `EventBus`.
-7.  **Reaction**:
-    *   `RiskEngine`: Updates session risk score (+10 points).
-    *   `GraphEngine`: Adds edge [Current Site] -> [Ad Domain].
-    *   `UIController`: Updates the extension popup counter.
-
-### Event-Driven Core
-
-To maintain modularity and prevent tight coupling, modules communicate exclusively via a strictly typed **EventBus** (`src/core/EventBus.js`).
-
-**Example Flow**:
-1.  `TrackerDetector` emits `TRACKER_DETECTED`.
-2.  `RiskEngine` receives event -> Increases Risk Score.
-3.  `GraphEngine` receives event -> Adds Edge to Graph.
-4.  `UIController` receives event -> Updates Badge Text.
+| Feature | What it does |
+|---------|-------------|
+| **Dual-Layer Risk Score** | 40% Behavioral + 30% Static + 20% Reputation + 10% History |
+| **Static Intelligence Engine** | Scores every site on HTTP security headers + TLS + cookie flags even with zero trackers |
+| **Behavioral DNA** | Generates a behavioral hash per site from 14 browser API signals; matches against malicious clusters |
+| **Threat Projection** | Predicts your risk in 30 days using EMA + cluster matches — INCREASING / STABLE / DECREASING |
+| **Trust Persistence** | Trust a domain once — it stays trusted even after extension restarts (backed by `chrome.storage.local`) |
+| **Explainable Risk Breakdown** | Popup shows each factor's exact contribution (+N score) |
+| **Research Mode** | Full raw-data JSON export: headers, DNA hash, projection, history, tracker graph |
+| **Tracker Graph** | D3 force-graph visualization of all tracker connections you've encountered |
+| **Ad Blocking** | `declarativeNetRequest` rules with per-site blocked-ad statistics |
+| **ML Classification** | Random Forest model classifies unknown domains in <1ms |
 
 ---
 
-## 3. Machine Learning Methodology
+## Risk Engine Architecture
 
-The AI architecture is transparent and documented.
+### The Four-Component Formula
 
-### Data Acquisition Strategy
-We curated a diverse dataset of approximately **20,000 domains** via `ml/build_dataset.py` from five authoritative sources:
-
-| Source | Category | Description |
-| :--- | :--- | :--- |
-| **EasyList** | Advertising | Standard list for ad domains. |
-| **EasyPrivacy** | Analytics | Focuses on trackers and data collectors. |
-| **Disconnect.me** | Categorized | High-confidence labeled data. |
-| **DuckDuckGo Radar** | Prevalence | Real-world tracker prevalence data. |
-| **Tranco Top-1M** | Benign | Top 10k sites assumed benign for baseline. |
-
-### Feature Engineering
-The system analyzes **metadata**, not content pixels. We extract a **13-Dimensional Feature Vector** for every request (`src/utils/FeatureUtils.js`):
-
-1.  **Entropy (`domainEntropy`)**: Randomness of the domain name (e.g., `cdn.network` vs `x8f7z.site`).
-2.  **Lexical Features**:
-    *   `domainLength`, `subdomainCount`, `tokenCount`.
-    *   `digitRatio`, `specialCharRatio` (DGA detection).
-3.  **URL Structure**:
-    *   `pathDepth`, `queryParams`.
-    *   `hasTrackingParams` (Presence of `utm_`, `fbclid`, etc.).
-4.  **Context**:
-    *   `isThirdParty` (Boolean).
-    *   `tldType` (.com vs .xyz).
-    *   `resourceType` (Script/Image/XHR).
-
-### Model Training Pipeline
-Executed via `ml/train_random_forest.py`:
-
-*   **Algorithm**: Random Forest Classifier.
-*   **Hyperparameters**:
-    *   `n_estimators`: 200 trees.
-    *   `max_depth`: 15 (Pruned for efficiency).
-    *   `class_weight`: "balanced" (Addressing class imbalance).
-*   **Validation**:
-    *   5-Fold Stratified Cross-Validation.
-    *   Out-of-Bag (OOB) Error estimation.
-
-### Inference Optimization
-Standard `scikit-learn` models are too large for browser extensions. We developed a custom exporter (`ml/convert_to_tfjs.py`) that:
-1.  Extracts the tree structures.
-2.  Quantizes thresholds to reduced precision.
-3.  Exports a minimal JSON structure.
-4.  **Result**: A model that loads in under 50ms and predicts in under 1ms using pure JavaScript.
-
----
-
-## 4. Advanced Intelligence Capabilities
-
-### Graph Intelligence (PageRank & Communities)
-The system maps trackers rather than simply counting them.
-*   **Nodes**: Websites visited & Third-parties loaded.
-*   **Edges**: Requests.
-*   **Insight**: By running **PageRank** locally, we identify "Super Spreaders"—trackers that appear across the user's history, even if not present on static blocklists.
-*   **Community Detection**: Uses **Label Propagation** to group trackers into clusters (e.g., "The Google Cluster", "The Meta Cluster").
-
-### Adaptive Risk Scoring
-Privacy is subjective, and the **Risk Engine** allows for calibration.
-*   The system learns from user behavior. Frequent visits to high-tracker sites result in a shift of the anomaly baseline.
-*   Users can adjust weights manually via the Settings UI (High tolerance vs. Paranoid mode).
-
-### Security & Dark Pattern Auditing
-*   **Strict Mode**: Flags sites missing `HSTS` (HTTPS Strict Transport Security).
-*   **Dark Patterns**: Analysis of text nodes to find "False Urgency" (e.g., "Offer expires in 5 minutes!") or "Confirm-shaming" (e.g., "No, I like paying full price").
-
----
-
-## 5. Developer Guide
-
-### Installation & Setup
-
-**Prerequisites**: Node.js v14+ (for testing/scripts), Python 3.9+ (for ML).
-
-1.  **Clone the Repository**
-    ```bash
-    git clone https://github.com/Sujith1911/Previsee-X.git
-    cd Privisee-x
-    ```
-
-2.  **Load into Chrome**
-    *   Navigate to `chrome://extensions`.
-    *   Enable "Developer Mode".
-    *   Click "Load Unpacked" -> Select the `src/` folder.
-
-3.  **Run ML Training (Optional)**
-    *   Required only if updating the model.
-    ```bash
-    pip install -r ml/requirements.txt
-    python ml/run_all.py
-    ```
-    *   This generates `src/models/tracker_classifier.json`.
-
-### Running Tests
-We use a **custom zero-dependency test runner** (`tests/runner.js`) to ensure the extension remains lightweight.
-
-```bash
-# Run all unit tests
-node scripts/test_runner.js
+```
+FinalRiskScore =
+  0.40 × BehavioralScore    (trackers + fingerprinting + excess cookies)
+  0.30 × StaticScore        (HTTP headers + HTTPS + TLD + cookie flags)
+  0.20 × ReputationScore    (tracker density + behavioral DNA cluster match)
+  0.10 × UserHistoryScore   (30-day rolling average for this domain)
 ```
 
-**Test Coverage**:
-*   Risk Calculation logic.
-*   Graph GraphRank/Community algorithms.
-*   Feature Extraction consistency.
+Even sites with zero JavaScript trackers get scored via `StaticScore` — visiting `http://` sites or sites missing `Content-Security-Policy` scores immediately.
 
-### Building for Production
-To package the extension for the Chrome Web Store:
+### The Six Engines
 
-```bash
-node scripts/build.js
-```
-*   Validates `manifest.json`.
-*   Zips `src/` into `dist/privisee-x-v2.1.0.zip`.
+| Engine | File | Role |
+|--------|------|------|
+| **Tracker Detector** | `src/detectors/TrackerDetector.js` | O(1) blocklist + ML classification |
+| **Anomaly Detector** | `src/detectors/AnomalyDetector.js` | Isolation Forest behavioral deviation |
+| **Fingerprint Detector** | `src/detectors/FingerprintDetector.js` | Canvas/WebGL/Audio API heuristics |
+| **Static Intelligence** | `src/risk/StaticIntelligenceEngine.js` | Header audit via `onHeadersReceived` |
+| **Behavioral DNA** | `src/risk/BehavioralDNA.js` | Session hash + cosine cluster match |
+| **Threat Projection** | `src/risk/ThreatProjectionEngine.js` | EMA trend + 30-day projection |
 
 ---
 
-## 6. File Structure & Organization
+## Behavioral DNA System
+
+Every site session generates a **Behavioral Signature** from 14 browser APIs:
+
+```
+Canvas.toDataURL, WebGL.getParameter, AudioContext.createOscillator,
+document.fonts, navigator.getBattery, RTCPeerConnection,
+fetch(), XMLHttpRequest, WebSocket, localStorage.setItem,
+clipboard.read, navigator.deviceMemory, navigator.connection,
+navigator.hardwareConcurrency
+```
+
+This signature is:
+1. **Hashed** (FNV-1a → 8-char hex) → shown in popup DNA pill
+2. **Clustered** — cosine similarity vs 4 pre-seeded centroids:
+   - `clean_site` (low risk baseline)
+   - `tracker_analytics` (moderate)
+   - `heavy_fingerprinter` (high)
+   - `data_exfiltrator` (critical)
+3. **Stored** in IndexedDB `behavioralFingerprints` store per domain
+
+---
+
+## Threat Projection
+
+```
+Projection = EMA(lastN_scores, α=0.3) + ClusterBonus × 0.5
+Trend = firstHalfAvg vs secondHalfAvg → INCREASING | STABLE | DECREASING
+Confidence = LOW (<2 visits) | MEDIUM (2–4) | HIGH (5+)
+```
+
+Visible in popup as a chip: `↑ Proj 68/100 in 30d · Confidence: MEDIUM`
+
+---
+
+## Machine Learning Pipeline
+
+### Training Data (~20,000 domains)
+
+| Source | Category |
+|--------|---------|
+| EasyList | Advertising |
+| EasyPrivacy | Analytics / Tracking |
+| Disconnect.me | Classified by category |
+| DuckDuckGo Tracker Radar | Real-world prevalence |
+| Tranco Top-10k | Benign baseline |
+
+### 13-Dimensional Feature Vector
+
+Each domain is represented by:
+`domainEntropy, domainLength, subdomainCount, tokenCount, digitRatio,
+specialCharRatio, pathDepth, queryParams, hasTrackingParams,
+isThirdParty, tldType, resourceType, hasSubdomain`
+
+### Model
+- **Algorithm**: Random Forest (200 trees, max_depth=15, class_weight=balanced)
+- **Validation**: 5-fold stratified cross-validation + OOB error
+- **Inference**: Quantized to minimal JSON → loads in <50ms, predicts in <1ms
+
+Run ML pipeline:
+```bash
+pip install -r ml/requirements.txt
+python ml/run_all.py
+# Outputs: src/models/tracker_classifier.json
+```
+
+---
+
+## Installation & Setup
+
+### Quick Install (Recommended)
+
+1. **Clone the repo**
+   ```bash
+   git clone https://github.com/Sujith1911/Previsee-X.git
+   ```
+
+2. **Load in Chrome**
+   - Navigate to `chrome://extensions`
+   - Enable **Developer Mode** (toggle top-right)
+   - Click **Load Unpacked** → Select the `src/` folder
+   - Pin the PRIVISEE-X icon to your toolbar
+
+3. **Browse normally** — the extension starts analyzing immediately.
+
+---
+
+## Using the Extension
+
+### Popup
+
+| Element | Description |
+|---------|------------|
+| **Score circle** | Overall risk 0–100 with colour-coded glow |
+| **Score bars** | Behavioral / Static / Reputation sub-scores |
+| **Trust Site** | Marks domain as trusted — score = 0, persists forever |
+| **Risk Breakdown** | Factor list with +N contribution of each signal |
+| **Projection chip** | 30-day predicted risk + trend direction |
+| **DNA hash pill** | 8-char behavioral session fingerprint |
+| **Research Mode toggle** | Enables raw data panel in dashboard |
+
+### Dashboard Tabs
+
+| Tab | Content |
+|-----|---------|
+| 🌐 Sites | All visited domains with risk, trackers, ads, cookies |
+| 🍪 Cookies | Per-cookie details with expiry, Secure, HttpOnly, SameSite flags |
+| 🕵️ Trackers | Tracker cross-reference: category, hits, sites |
+| 🚫 Blocked Ads | Ad blocking stats per domain |
+| 🕸️ Tracker Graph | D3 force-directed tracker network visualization |
+| 🔬 Research | Full raw data export (JSON download) for the current tab |
+
+### Settings (`settings.html`)
+
+- **Risk weight sliders** — tune Behavioral / Cookie / Fingerprint / Anomaly weights
+- **Feature toggles** — Static Intelligence, Threat Projection, Research Mode, Graph, ML
+- **Trusted Domains** — view all trusted domains, remove individual trust or clear all
+- **Data Export/Import** — full JSON backup and restore
+- **Retention** — configure how many days of history to keep
+
+---
+
+## File Structure
 
 ```
 Privisee-x/
-├── ml/                         # Machine Learning Pipeline
-│   ├── build_dataset.py        # Fetches & cleans training data
-│   ├── train_random_forest.py  # Trains the classifier
-│   ├── convert_to_tfjs.py      # Optimizes model for JS
-│   └── requirements.txt        # Python dependencies
+├── ml/                              # Machine Learning Pipeline
+│   ├── build_dataset.py             # Fetch & label training data
+│   ├── train_random_forest.py       # Train RF classifier
+│   ├── train_isolation_forest.py    # Train anomaly detector
+│   ├── convert_to_tfjs.py           # Export to browser-compatible JSON
+│   └── requirements.txt
 │
-├── src/                        # Extension Source Code
-│   ├── background.js           # Central Service Worker (Orchestrator)
-│   ├── content.js              # DOM & API Interface
-│   ├── manifest.json           # V3 Configuration
+├── src/                             # Extension Source
+│   ├── manifest.json                # MV3, v2.0.0
+│   ├── background.js                # Service Worker — all engines inlined
+│   ├── content.js                   # 14-signal DOM/API monitor
+│   ├── popup.html / settings.html / dashboard.html
 │   │
-│   ├── core/                   # Core Infrastructure
-│   │   ├── EngineBase.js       # Abstract Base Class
-│   │   ├── EventBus.js         # Pub/Sub System
-│   │   └── Logger.js           # Structured Logging
+│   ├── risk/
+│   │   ├── RiskEngine.js            # Legacy single-layer (deprecated)
+│   │   ├── StaticIntelligenceEngine.js  # v2.0 header/TLS/cookie scoring
+│   │   ├── BehavioralDNA.js         # v2.0 session hash + cluster match
+│   │   └── ThreatProjectionEngine.js    # v2.0 EMA projection
 │   │
-│   ├── detectors/              # Detection Engines
-│   │   ├── TrackerDetector.js  # ML + Blocklist
-│   │   ├── AnomalyDetector.js  # Isolation Forest
-│   │   ├── FingerprintDetector.js # API Heuristics
+│   ├── detectors/
+│   │   ├── TrackerDetector.js       # Blocklist O(1) + ML fallback
+│   │   ├── AnomalyDetector.js       # Isolation Forest
+│   │   └── FingerprintDetector.js   # API heuristics
 │   │
-│   ├── risk/                   # Risk Scoring
-│   ├── graph/                  # Graph Algorithms
-│   ├── security/               # Security Audit
-│   ├── explainability/         # XAI (Explainable AI)
-│   ├── models/                 # Model Loader & JSON Asset
-│   └── ui/                     # Dashboard & Popup Logic
+│   ├── storage/
+│   │   └── StorageManager.js        # IndexedDB v7 (7 stores)
+│   │
+│   ├── ui/
+│   │   ├── PopupController.js       # v2.0 popup logic
+│   │   ├── DashboardController.js   # Dashboard tabs + Research tab
+│   │   └── ResearchMode.js          # Raw data snapshot + JSON export
+│   │
+│   ├── graph/GraphEngine.js         # PageRank + community detection
+│   ├── security/SecurityAuditEngine.js
+│   └── explainability/ExplainabilityEngine.js
 │
-├── tests/                      # Test Suite
-│   ├── runner.js               # Custom Test Runner
-│   ├── unit/                   # Unit Tests
-│   └── main.js                 # Test Entry Point
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── PROJECT_REPORT.md
+│   └── TESTING.md
 │
-├── docs/                       # Documentation
-│   ├── THESIS.md               # Research Paper / Thesis
-│   ├── THREAT_MODEL.md         # Security Analysis
-│   └── PROJECT_REPORT.md       # General Report
-│
-└── README.md                   # This file
+└── README.md
 ```
 
 ---
 
-**PRIVISEE-X v2.1**
+## Privacy Guarantee
+
+- ✅ **Zero network requests** — all analysis is 100% local
+- ✅ **No telemetry** — nothing is sent anywhere, ever
+- ✅ **No external CDN scripts** — D3.js and Chart.js are bundled in `src/lib/`
+- ✅ **IndexedDB only** — all history stored locally in the browser
+- ✅ **Open source** — full source auditable at [github.com/Sujith1911/Previsee-X](https://github.com/Sujith1911/Previsee-X)
+
+---
+
+**PRIVISEE-X v2.0**  
 *Defending Privacy with Intelligence.*
