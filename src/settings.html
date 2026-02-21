@@ -340,6 +340,45 @@
           </label>
         </div>
       </div>
+
+      <div class="setting-item">
+        <div class="setting-header">
+          <div>
+            <div class="setting-title">Static Intelligence Engine <span style="font-size:10px;background:#6366f118;color:#818cf8;border:1px solid #6366f130;padding:2px 6px;border-radius:4px;margin-left:6px">v2.0</span></div>
+            <div class="setting-description">Score every site from HTTP headers, HTTPS status, cookie flags, and domain TLD — even with zero trackers</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggleStaticIntelligence" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-header">
+          <div>
+            <div class="setting-title">Threat Projection <span style="font-size:10px;background:#6366f118;color:#818cf8;border:1px solid #6366f130;padding:2px 6px;border-radius:4px;margin-left:6px">v2.0</span></div>
+            <div class="setting-description">30-day risk trajectory using EMA + behavioral DNA cluster matching</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggleThreatProjection" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-header">
+          <div>
+            <div class="setting-title">Research Mode <span style="font-size:10px;background:#6366f118;color:#818cf8;border:1px solid #6366f130;padding:2px 6px;border-radius:4px;margin-left:6px">v2.0</span></div>
+            <div class="setting-description">Enable raw data snapshot panel in dashboard with JSON export (for researchers and power users)</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggleResearchMode">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
     </section>
 
     <!-- Privacy Settings -->
@@ -371,6 +410,20 @@
             <span class="slider-value" id="retentionValue">7 days</span>
           </div>
           <input type="range" min="1" max="30" step="1" value="7" class="slider-input" id="retentionDays">
+        </div>
+      </div>
+    </section>
+
+    <!-- Trusted Domains -->
+    <section class="setting-category">
+      <h2>🤝 Trusted Domains</h2>
+      <p style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1.5rem;">
+        Sites you have trusted via the popup. Trust overrides all risk scores — the site is treated as safe regardless of its behavior.
+      </p>
+      <div class="setting-item">
+        <div id="trustedDomainsList" style="margin-bottom:1rem">Loading…</div>
+        <div class="button-group">
+          <button class="btn btn-outline" id="clearAllTrust">🚫 Remove All Trust</button>
         </div>
       </div>
     </section>
@@ -412,7 +465,7 @@
     <section class="setting-category">
       <h2>About</h2>
       <div class="setting-item">
-        <div class="setting-title">PRIVISEE-X v1.0.0</div>
+        <div class="setting-title">PRIVISEE-X v2.0.0</div>
         <div class="setting-description">
           AI-Powered Privacy Intelligence System<br>
           Zero telemetry • 100% local processing • Open source

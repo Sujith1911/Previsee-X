@@ -773,6 +773,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       }
 
+      // ── RELOAD_TRUSTED_DOMAINS (called by settings.js after manual trust edits) ─
+      else if (action === 'RELOAD_TRUSTED_DOMAINS') {
+        try {
+          const stored = await chrome.storage.local.get('trustedDomains');
+          trustedDomains = stored.trustedDomains || {};
+          sendResponse({ success: true, count: Object.keys(trustedDomains).length });
+        } catch (e) { sendResponse({ success: false, error: e.message }); }
+      }
+
       // ── DELETE_SITE ────────────────────────────────────────────────────────
       else if (action === 'DELETE_SITE') {
         try {

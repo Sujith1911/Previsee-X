@@ -4,7 +4,8 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.0.x   | ✅ Yes             |
+| 2.0.x   | ✅ Yes             |
+| 1.0.x   | ❌ No (upgrade to v2.0) |
 
 ## Privacy & Security Architecture
 
@@ -12,10 +13,12 @@ PRIVISEE-X is designed with privacy-first principles:
 
 - **Zero external communication** — No API calls, no telemetry, no crash reporting
 - **100% local processing** — All ML inference and analysis runs client-side
-- **Sandboxed storage** — Data stored in Chrome's sandboxed IndexedDB
-- **Minimal permissions** — Only requests `storage`, `cookies`, `webRequest`, `webNavigation`, `scripting`, `tabs`
+- **Sandboxed storage** — Data stored in Chrome's sandboxed IndexedDB (7 stores, v7 schema)
+- **Minimal permissions** — `storage`, `cookies`, `webRequest`, `webNavigation`, `scripting`, `tabs`, `alarms`, `clipboardRead`, `clipboardWrite`, `declarativeNetRequest`
 - **No eval()** — No dynamic code execution
-- **CSP enforced** — Content Security Policy prevents XSS
+- **CSP enforced** — All extension pages (popup, dashboard, settings) include strict CSP meta tags
+- **Trust persistence** — Domain trust stored in `chrome.storage.local`, not in memory (survives SW restarts)
+- **Behavioral DNA** — 14-API signal hash is local-only, never transmitted
 
 ## Reporting a Vulnerability
 
