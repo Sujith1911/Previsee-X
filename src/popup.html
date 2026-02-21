@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
   <title>PRIVISEE-X</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -121,6 +122,14 @@
         <div class="stat-label">Trackers</div>
       </div>
       <div class="stat-card">
+        <div class="stat-value" id="adCount" style="color:#f97316">0</div>
+        <div class="stat-label">Ads Detected</div>
+      </div>
+      <div class="stat-card" style="border-color:rgba(239,68,68,0.3)">
+        <div class="stat-value" id="blockedAds" style="color:#ef4444">0</div>
+        <div class="stat-label">🚫 Blocked</div>
+      </div>
+      <div class="stat-card">
         <div class="stat-value" id="cookieCount">0</div>
         <div class="stat-label">Cookies</div>
       </div>
@@ -133,6 +142,6 @@
     <button class="btn" id="dashboardBtn">View Dashboard</button>
   </div>
 
-  <script type="module" src="ui/PopupController.js"></script>
+  <script src="ui/PopupController.js"></script>
 </body>
 </html>

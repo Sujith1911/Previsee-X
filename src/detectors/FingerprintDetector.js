@@ -14,6 +14,10 @@ export class FingerprintDetector extends EngineBase {
     this.fingerprintCounts = new Map(); // domain -> count
   }
 
+  async init() {
+    await super.init();
+  }
+
   /**
    * Process an API access report
    * @param {object} report - { domain, api, method, args }
@@ -32,6 +36,7 @@ export class FingerprintDetector extends EngineBase {
     
     const domainStats = this.fingerprintCounts.get(domain);
     domainStats[api] = (domainStats[api] || 0) + 1;
+    this.logger.info(`Fingerprint count for ${domain} ${api}: ${domainStats[api]}`);
 
     // Thresholds
     const THRESHOLDS = {
@@ -41,6 +46,7 @@ export class FingerprintDetector extends EngineBase {
     };
 
     if (domainStats[api] === THRESHOLDS[api]) {
+        this.logger.info(`Emitting FINGERPRINTING_DETECTED for ${domain}`);
         this.emit('FINGERPRINTING_DETECTED', {
             domain,
             type: api,

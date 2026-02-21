@@ -72,4 +72,4 @@ export class Logger {
 }
 
 // Factory for getting loggers
-export const createLogger = (context) => new Logger(context);
+export const createLogger = (context, minLevel = LogLevel.DEBUG) => new Logger(context, minLevel);

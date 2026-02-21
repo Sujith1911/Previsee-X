@@ -4,7 +4,7 @@
  * 
  * Handles loading, validation, and execution of ML models.
  * Supports the custom Random Forest JSON format.
- * Includes checksum validation for security.
+ * Uses actual loaded tree count for vote normalization (not metadata n_estimators).
  */
 
 import { createLogger } from '../core/Logger.js';
@@ -32,11 +32,17 @@ export class ModelLoader {
         throw new Error(`Invalid model structure for ${modelId}`);
       }
 
+      // Store actual tree count (may differ from n_estimators if truncated)
+      modelData._loadedTreeCount = modelData.trees.length;
+
       this.models.set(modelId, modelData);
-      this.logger.info(`Model ${modelId} loaded successfully (${modelData.n_estimators} trees)`);
+      this.logger.info(
+        `Model ${modelId} loaded: ${modelData._loadedTreeCount}/${modelData.n_estimators} trees, ` +
+        `${modelData.n_features} features, classes: [${modelData.classes.join(', ')}]`
+      );
       return true;
     } catch (error) {
-      this.logger.error(`Failed to load model ${modelId}:`, error);
+      this.logger.warn(`Failed to load model ${modelId} (ML disabled):`, error.message);
       return false;
     }
   }
@@ -48,6 +54,7 @@ export class ModelLoader {
     return (
       model &&
       Array.isArray(model.trees) &&
+      model.trees.length > 0 &&
       Array.isArray(model.classes) &&
       typeof model.n_features === 'number'
     );
@@ -55,7 +62,9 @@ export class ModelLoader {
 
   /**
    * Execute inference (Tracker Classifier)
-   * vector: 13-feature array
+   * @param {string} modelId
+   * @param {number[]} vector - must be exactly model.n_features long
+   * @returns {{ category, confidence, probabilities } | null}
    */
   predict(modelId, vector) {
     const model = this.models.get(modelId);
@@ -64,18 +73,25 @@ export class ModelLoader {
       return null;
     }
 
+    // Guard: feature dimension must match model expectation
+    if (vector.length !== model.n_features) {
+      throw new Error(
+        `Feature vector dimension mismatch: expected ${model.n_features}, got ${vector.length}`
+      );
+    }
+
     const t0 = performance.now();
     
-    // Vote across all trees
+    // Vote across all loaded trees
     const votes = new Array(model.classes.length).fill(0);
     
     for (const tree of model.trees) {
-        const classIdx = this.traverseTree(tree, vector);
-        votes[classIdx]++;
+      const classIdx = this.traverseTree(tree, vector);
+      votes[classIdx]++;
     }
 
-    // Calculate probabilities
-    const totalVotes = model.n_estimators;
+    // Normalize by ACTUAL loaded tree count (not metadata n_estimators)
+    const totalVotes = model._loadedTreeCount; // Audit fix: was model.n_estimators
     const probabilities = votes.map(v => v / totalVotes);
     
     // Get best class
@@ -83,26 +99,24 @@ export class ModelLoader {
     const classIndex = probabilities.indexOf(maxProb);
     
     const duration = performance.now() - t0;
-    if (duration > 1) {
-        // Log slow inference (Soft realtime constraint < 1ms)
-        // this.logger.debug(`Slow inference: ${duration.toFixed(2)}ms`); 
-        // Commented out to avoid spamming debug logs
+    if (duration > 5) {
+      this.logger.warn(`Slow inference for ${modelId}: ${duration.toFixed(2)}ms`);
     }
 
     return {
       category: model.classes[classIndex],
       confidence: maxProb,
-      probabilities: probabilities
+      probabilities
     };
   }
 
   /**
-   * Optimized tree traversal
+   * Optimized tree traversal with depth guard
    */
   traverseTree(tree, features) {
     let nodeId = 0; 
     let depth = 0;
-    const maxDepth = 20;
+    const maxDepth = 50; // Generous cap to prevent infinite loops
 
     while (depth < maxDepth) {
       const leftChild = tree.children_left[nodeId];
@@ -110,32 +124,37 @@ export class ModelLoader {
 
       // Leaf node
       if (leftChild === -1 && rightChild === -1) {
-        // Optimized: assume values is [class_idx] or simple majority if simpler JSON
-        // Using strict structure from Python export: values[nodeId] is array of counts
         const values = tree.values[nodeId];
         if (Array.isArray(values)) {
-            // Find index of max
-            let maxVal = -1;
-            let maxIdx = 0;
-            for (let i = 0; i < values.length; i++) {
-                if (values[i] > maxVal) {
-                    maxVal = values[i];
-                    maxIdx = i;
-                }
+          let maxVal = -1;
+          let maxIdx = 0;
+          for (let i = 0; i < values.length; i++) {
+            if (values[i] > maxVal) {
+              maxVal = values[i];
+              maxIdx = i;
             }
-            return maxIdx;
+          }
+          return maxIdx;
         }
-        return 0; 
+        return 0;
       }
 
       // Internal node
-      if (features[tree.features[nodeId]] <= tree.thresholds[nodeId]) {
+      const featureVal = features[tree.features[nodeId]];
+      if (featureVal === undefined || featureVal === null) {
+        this.logger.warn(`Undefined feature at index ${tree.features[nodeId]}`);
+        return 0;
+      }
+
+      if (featureVal <= tree.thresholds[nodeId]) {
         nodeId = leftChild;
       } else {
         nodeId = rightChild;
       }
       depth++;
     }
+
+    this.logger.warn(`Tree traversal hit maxDepth (${maxDepth}) — returning class 0`);
     return 0;
   }
 }

@@ -36,6 +36,20 @@ export class EventBus {
   }
 
   /**
+   * Subscribe to an event topic — fires ONCE then auto-unsubscribes
+   * @param {string} topic - Event name
+   * @param {Function} callback - Handler function
+   * @returns {Function} Unsubscribe function
+   */
+  once(topic, callback) {
+    const unsub = this.subscribe(topic, (data) => {
+      unsub();
+      callback(data);
+    });
+    return unsub;
+  }
+
+  /**
    * Publish an event to all subscribers
    * @param {string} topic - Event name
    * @param {any} data - Payload

@@ -1,0 +1,9 @@
+{
+  "name": "privisee-x",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Privacy Intelligence Browser Extension",
+  "scripts": {
+    "test": "node tests/main.js"
+  }
+}
