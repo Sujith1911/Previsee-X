@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PRIVISEE-X",
-  "version": "1.0.0",
-  "description": "AI-Powered Privacy Intelligence System - Detect, Analyze, and Explain Web Tracking in Real-Time",
+  "version": "2.0.0",
+  "description": "Explainable Behavioral Privacy Intelligence — Dual-layer risk engine, behavioral DNA hashing, threat projection, and trust persistence.",
   "permissions": [
     "storage",
     "cookies",
