@@ -596,6 +596,25 @@
       if (b.dataset.tab === 'graph') {
         b.addEventListener('click', () => { setTimeout(renderGraph, 50); });
       }
+      // Research tab — lazy-render ResearchMode panel on first click, refresh on subsequent
+      if (b.dataset.tab === 'research') {
+        let researchInitialized = false;
+        b.addEventListener('click', () => {
+          const container = document.getElementById('researchPanelContainer');
+          if (!container) return;
+          if (typeof window.ResearchMode !== 'undefined') {
+            if (!researchInitialized) {
+              researchInitialized = true;
+              window.ResearchMode.renderPanel(container);
+            } else {
+              // Re-render on each tab re-open to get fresh data
+              window.ResearchMode.renderPanel(container);
+            }
+          } else {
+            container.innerHTML = '<div style="padding:40px;text-align:center;color:#64748b">ResearchMode not available. Try reloading the dashboard.</div>';
+          }
+        });
+      }
     });
 
     // Pause/resume auto-refresh based on page visibility (avoids ghost timers)
