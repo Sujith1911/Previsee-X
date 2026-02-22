@@ -6,22 +6,23 @@
 // Default configuration
 const DEFAULT_CONFIG = {
   weights: {
-    tracker: 0.40,
-    cookie: 0.10,
-    fingerprint: 0.10,
-    anomaly: 0.10,
-    thirdParty: 0.05
+    behavioral: 0.35,   // 35% — trackers, fingerprint, cookies (v4.0)
+    static:     0.30,   // 30% — security headers, HTTP, redirects
+    reputation: 0.20,   // 20% — DNA cluster, 3rd-party count
+    security:   0.15    // 15% — cert warning, HSTS, mixed content
   },
   features: {
-    trackerDetection: true,
+    trackerDetection:   true,
     fingerprintDetection: true,
-    anomalyDetection: true,
-    graphIntelligence: true,
+    anomalyDetection:   true,
+    graphIntelligence:  true,
     staticIntelligence: true,
-    threatProjection: true,
-    researchMode: false,
-    strictMode: false,
-    federatedLearning: false
+    threatProjection:   true,
+    certWarning:        true,    // v4.0 — CertWarningEngine
+    overlayWarning:     true,    // v4.0 — WebAdvisor overlay at risk > 70
+    researchMode:       false,
+    strictMode:         false,
+    federatedLearning:  false
   },
   retentionDays: 30
 };
@@ -74,32 +75,34 @@ async function saveSettings() {
  * Update display with current settings
  */
 function updateDisplay() {
-  // Weight sliders
-  document.getElementById('trackerWeight').value = currentConfig.weights.tracker;
-  document.getElementById('trackerWeightValue').textContent = currentConfig.weights.tracker.toFixed(2);
-  
-  document.getElementById('cookieWeight').value = currentConfig.weights.cookie;
-  document.getElementById('cookieWeightValue').textContent = currentConfig.weights.cookie.toFixed(2);
-  
-  document.getElementById('fingerprintWeight').value = currentConfig.weights.fingerprint;
-  document.getElementById('fingerprintWeightValue').textContent = currentConfig.weights.fingerprint.toFixed(2);
-  
-  document.getElementById('anomalyWeight').value = currentConfig.weights.anomaly;
-  document.getElementById('anomalyWeightValue').textContent = currentConfig.weights.anomaly.toFixed(2);
-  
-  document.getElementById('thirdPartyWeight').value = currentConfig.weights.thirdParty;
-  document.getElementById('thirdPartyWeightValue').textContent = currentConfig.weights.thirdParty.toFixed(2);
+  // Weight sliders (v4.0 names)
+  document.getElementById('trackerWeight').value = currentConfig.weights.behavioral ?? 0.35;
+  document.getElementById('trackerWeightValue').textContent = (currentConfig.weights.behavioral ?? 0.35).toFixed(2);
 
-  document.getElementById('toggleTrackerDetection').checked = currentConfig.features.trackerDetection;
-  document.getElementById('toggleFingerprint').checked = currentConfig.features.fingerprintDetection;
-  document.getElementById('toggleAnomaly').checked = currentConfig.features.anomalyDetection;
-  document.getElementById('toggleGraph').checked = currentConfig.features.graphIntelligence;
+  document.getElementById('cookieWeight').value = currentConfig.weights.static ?? 0.30;
+  document.getElementById('cookieWeightValue').textContent = (currentConfig.weights.static ?? 0.30).toFixed(2);
+
+  document.getElementById('fingerprintWeight').value = currentConfig.weights.reputation ?? 0.20;
+  document.getElementById('fingerprintWeightValue').textContent = (currentConfig.weights.reputation ?? 0.20).toFixed(2);
+
+  document.getElementById('anomalyWeight').value = currentConfig.weights.security ?? 0.15;
+  document.getElementById('anomalyWeightValue').textContent = (currentConfig.weights.security ?? 0.15).toFixed(2);
+
+  // Feature toggles
+  document.getElementById('toggleTrackerDetection').checked   = currentConfig.features.trackerDetection ?? true;
+  document.getElementById('toggleFingerprint').checked        = currentConfig.features.fingerprintDetection ?? true;
+  document.getElementById('toggleAnomaly').checked            = currentConfig.features.anomalyDetection ?? true;
+  document.getElementById('toggleGraph').checked              = currentConfig.features.graphIntelligence ?? true;
   document.getElementById('toggleStaticIntelligence').checked = currentConfig.features.staticIntelligence ?? true;
-  document.getElementById('toggleThreatProjection').checked  = currentConfig.features.threatProjection ?? true;
-  document.getElementById('toggleResearchMode').checked      = currentConfig.features.researchMode ?? false;
+  document.getElementById('toggleThreatProjection').checked   = currentConfig.features.threatProjection ?? true;
+  document.getElementById('toggleResearchMode').checked       = currentConfig.features.researchMode ?? false;
   const strictEl = document.getElementById('toggleStrictMode');
   if (strictEl) strictEl.checked = currentConfig.features.strictMode ?? false;
-  document.getElementById('toggleFederatedLearning').checked = currentConfig.features.federatedLearning;
+  document.getElementById('toggleFederatedLearning').checked  = currentConfig.features.federatedLearning ?? false;
+  const certEl = document.getElementById('toggleCertWarning');
+  if (certEl) certEl.checked = currentConfig.features.certWarning ?? true;
+  const overlayEl = document.getElementById('toggleOverlayWarning');
+  if (overlayEl) overlayEl.checked = currentConfig.features.overlayWarning ?? true;
 
   // Retention
   document.getElementById('retentionDays').value = currentConfig.retentionDays;
@@ -118,13 +121,12 @@ function setupEventListeners() {
     window.location.href = 'dashboard.html';
   });
 
-  // Weight sliders
+  // Weight sliders (v4.0)
   const sliders = [
-    { id: 'trackerWeight', key: 'tracker', display: 'trackerWeightValue' },
-    { id: 'cookieWeight', key: 'cookie', display: 'cookieWeightValue' },
-    { id: 'fingerprintWeight', key: 'fingerprint', display: 'fingerprintWeightValue' },
-    { id: 'anomalyWeight', key: 'anomaly', display: 'anomalyWeightValue' },
-    { id: 'thirdPartyWeight', key: 'thirdParty', display: 'thirdPartyWeightValue' }
+    { id: 'trackerWeight',     key: 'behavioral', display: 'trackerWeightValue' },
+    { id: 'cookieWeight',      key: 'static',     display: 'cookieWeightValue' },
+    { id: 'fingerprintWeight', key: 'reputation', display: 'fingerprintWeightValue' },
+    { id: 'anomalyWeight',     key: 'security',   display: 'anomalyWeightValue' }
   ];
 
   sliders.forEach(slider => {
@@ -156,6 +158,8 @@ function setupEventListeners() {
     { id: 'toggleGraph',              key: 'graphIntelligence' },
     { id: 'toggleStaticIntelligence', key: 'staticIntelligence' },
     { id: 'toggleThreatProjection',   key: 'threatProjection' },
+    { id: 'toggleCertWarning',        key: 'certWarning' },     // v4.0
+    { id: 'toggleOverlayWarning',     key: 'overlayWarning' },  // v4.0
     { id: 'toggleResearchMode',       key: 'researchMode' },
     { id: 'toggleStrictMode',         key: 'strictMode' },
     { id: 'toggleFederatedLearning',  key: 'federatedLearning' }
@@ -224,7 +228,7 @@ async function exportData() {
     }
 
     const exportPayload = {
-      version: '3.0.0',
+      version: '4.0.0',
       exportDate: new Date().toISOString(),
       config: currentConfig,
       sites: response.sites || [],
@@ -232,7 +236,8 @@ async function exportData() {
         totalSites: (response.sites||[]).length,
         totalTrackers: (response.sites||[]).reduce((s, x) => s + (x.trackerCount || 0), 0),
         adsBlockedTotal: response.adsBlockedCount || 0,
-        trackersBlockedTotal: response.trackersBlockedCount || 0
+        trackersBlockedTotal: response.trackersBlockedCount || 0,
+        scoringWeights: { behavioral:'35%', static:'30%', reputation:'20%', securityLayer:'15%' }
       }
     };
 

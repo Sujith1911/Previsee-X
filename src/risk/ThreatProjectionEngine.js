@@ -1,5 +1,5 @@
 /**
- * PRIVISEE-X v3.0
+ * PRIVISEE-X v4.0
  * Risk: ThreatProjectionEngine
  *
  * Computes a 30-day forward risk trajectory using:

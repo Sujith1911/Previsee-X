@@ -232,27 +232,27 @@
       <div class="setting-item">
         <div class="slider-container">
           <div class="slider-label">
-            <span>Tracker Count Weight</span>
-            <span class="slider-value" id="trackerWeightValue">0.25</span>
+            <span>Behavioral Weight <span style="font-size:10px;color:#818cf8">(default 35%)</span></span>
+            <span class="slider-value" id="trackerWeightValue">0.35</span>
           </div>
-          <input type="range" min="0" max="1" step="0.05" value="0.25" class="slider-input" id="trackerWeight">
+          <input type="range" min="0" max="1" step="0.05" value="0.35" class="slider-input" id="trackerWeight">
         </div>
       </div>
 
       <div class="setting-item">
         <div class="slider-container">
           <div class="slider-label">
-            <span>Cookie Weight</span>
-            <span class="slider-value" id="cookieWeightValue">0.20</span>
+            <span>Static Analysis Weight <span style="font-size:10px;color:#818cf8">(default 30%)</span></span>
+            <span class="slider-value" id="cookieWeightValue">0.30</span>
           </div>
-          <input type="range" min="0" max="1" step="0.05" value="0.20" class="slider-input" id="cookieWeight">
+          <input type="range" min="0" max="1" step="0.05" value="0.30" class="slider-input" id="cookieWeight">
         </div>
       </div>
 
       <div class="setting-item">
         <div class="slider-container">
           <div class="slider-label">
-            <span>Fingerprinting Weight</span>
+            <span>Reputation Weight <span style="font-size:10px;color:#818cf8">(default 20%)</span></span>
             <span class="slider-value" id="fingerprintWeightValue">0.20</span>
           </div>
           <input type="range" min="0" max="1" step="0.05" value="0.20" class="slider-input" id="fingerprintWeight">
@@ -262,20 +262,10 @@
       <div class="setting-item">
         <div class="slider-container">
           <div class="slider-label">
-            <span>Anomaly Detection Weight</span>
-            <span class="slider-value" id="anomalyWeightValue">0.10</span>
+            <span>Security Layer Weight <span style="font-size:10px;color:#818cf8">(default 15%)</span></span>
+            <span class="slider-value" id="anomalyWeightValue">0.15</span>
           </div>
-          <input type="range" min="0" max="1" step="0.05" value="0.10" class="slider-input" id="anomalyWeight">
-        </div>
-      </div>
-
-      <div class="setting-item">
-        <div class="slider-container">
-          <div class="slider-label">
-            <span>Third-Party Connections Weight</span>
-            <span class="slider-value" id="thirdPartyWeightValue">0.10</span>
-          </div>
-          <input type="range" min="0" max="1" step="0.05" value="0.10" class="slider-input" id="thirdPartyWeight">
+          <input type="range" min="0" max="1" step="0.05" value="0.15" class="slider-input" id="anomalyWeight">
         </div>
       </div>
 
@@ -383,7 +373,33 @@
       <div class="setting-item">
         <div class="setting-header">
           <div>
-            <div class="setting-title">🔥 Strict Mode <span style="font-size:10px;background:#ef444420;color:#f87171;border:1px solid #ef444430;padding:2px 6px;border-radius:4px;margin-left:6px">v3.0</span></div>
+            <div class="setting-title">Certificate Warning Engine <span style="font-size:10px;background:#6366f118;color:#818cf8;border:1px solid #6366f130;padding:2px 6px;border-radius:4px;margin-left:6px">v4.0</span></div>
+            <div class="setting-description">Evaluate TLS certificate validity, HSTS, mixed content, and security headers locally — no external API calls</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggleCertWarning" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-header">
+          <div>
+            <div class="setting-title">WebAdvisor Overlay Warning <span style="font-size:10px;background:#ef444420;color:#f87171;border:1px solid #ef444430;padding:2px 6px;border-radius:4px;margin-left:6px">v4.0</span></div>
+            <div class="setting-description">Show full-page overlay warning when risk score exceeds 70 or certificate is invalid. Users can dismiss, proceed, or trust the site.</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggleOverlayWarning" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-header">
+          <div>
+            <div class="setting-title">🔥 Strict Mode <span style="font-size:10px;background:#ef444420;color:#f87171;border:1px solid #ef444430;padding:2px 6px;border-radius:4px;margin-left:6px">v4.0</span></div>
             <div class="setting-description">Aggressively block suspicious TLDs (.xyz, .tk, .ml), short-name domains, popup/redirect patterns, and ad networks. May cause some sites to behave unexpectedly.</div>
           </div>
           <label class="toggle-switch">
@@ -477,12 +493,13 @@
     <section class="setting-category">
       <h2>About</h2>
       <div class="setting-item">
-        <div class="setting-title">PRIVISEE-X v3.0.0</div>
+        <div class="setting-title">PRIVISEE-X v4.0.0 — WebAdvisor Mode</div>
         <div class="setting-description">
-          Local Privacy Firewall · Behavioral Risk Engine · Static Security Analyzer<br>
+          Local Privacy Firewall · Certificate Warning Engine · Advisory Engine · WebAdvisor Mode<br>
           Zero telemetry &bull; 100% local processing &bull; Open source
         </div>
         <div class="info-box">
+          <strong>v4.0 Scoring:</strong> 35% Behavioral &bull; 30% Static &bull; 20% Reputation &bull; 15% Security Layer<br><br>
           Made with ❤️ for privacy. Licensed under MIT.<br>
           <a href="https://github.com/Sujith1911/Previsee-X" target="_blank" style="color: #667eea;">View on GitHub</a>
         </div>

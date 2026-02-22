@@ -1,5 +1,5 @@
 /**
- * PRIVISEE-X v3.0
+ * PRIVISEE-X v4.0
  * Risk: StaticIntelligenceEngine
  *
  * Guarantees EVERY website receives a privacy risk score, even static sites

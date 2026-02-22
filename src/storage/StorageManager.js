@@ -1,5 +1,5 @@
 /**
- * PRIVISEE-X v3.0
+ * PRIVISEE-X v4.0
  * Storage: StorageManager
  *
  * High-performance IndexedDB wrapper with schema versioning.

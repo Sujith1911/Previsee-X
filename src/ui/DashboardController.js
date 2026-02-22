@@ -1,5 +1,5 @@
 /**
- * PRIVISEE-X v3.0 — DashboardController
+ * PRIVISEE-X v4.0 — DashboardController
  *
  * Features:
  *  - Global site filter bar — applies to ALL tabs simultaneously

@@ -1,9 +1,12 @@
 /**
- * PRIVISEE-X v3.0 — Background Service Worker
- * Privacy Firewall + Behavioral Risk Engine + Static Analyzer
+ * PRIVISEE-X v4.0 — Background Service Worker
+ * WebAdvisor Mode + Privacy Firewall + Behavioral Risk Engine
+ * Certificate Warning Engine + Security Layer Analysis
  */
 
 import { storageManager } from './storage/StorageManager.js';
+import { CertWarningEngine } from './security/CertWarningEngine.js';
+import { AdvisoryEngine } from './risk/AdvisoryEngine.js';
 
 // ── Domain Lists ──────────────────────────────────────────────────────────────
 const AD_DOMAINS = [
@@ -43,6 +46,14 @@ const NAVIGATION_AD_DOMAINS = [
   'clickbooth.com','anrdoezrs.net','tkqlhce.com','dpbolvw.net','jdoqocy.com'
 ];
 
+// Known redirect/malware domains for strict mode
+const REDIRECT_DOMAINS = new Set([
+  'redirect.viglink.com','api2.viglink.com','go.redirectingat.com',
+  'track.flexlinkspro.com','redirect2.adform.net','ad.doubleclick.net',
+  'bounce.trafficjunky.net','redir.speedbit.com','www.googleadservices.com',
+  'landing.adtrafficquality.google','pagead.l.doubleclick.net'
+]);
+
 const STRICT_TLDS = new Set(['xyz','tk','ml','ga','cf','gq','zip','mov','fit','bid','win',
   'loan','click','download','review','stream','top','gdn','accountant','faith','date','racing','trade']);
 
@@ -67,6 +78,10 @@ let   adsBlockedCount     = 0;
 let   trackersBlockedCount = 0;
 let   listenersReady = false;
 
+// Per-tab overlay/warning dismissed flags
+const overlayDismissed = {}; // tabId → boolean
+const certWarningDismissed = {}; // tabId → boolean
+
 // In-memory blocked log (last 500, persisted to IDB lazily)
 const blockedLog = [];
 
@@ -85,6 +100,8 @@ function getTabStats(tabId) {
       currentSessionRisk:0, historicalRisk:0, trustOverride:false,
       riskScore:0, riskLevel:'LOW',
       staticScore:0, behavioralScore:0, reputationScore:0,
+      securityLayerScore:0, certWarning:null,
+      webAdvisorStatus:'SAFE', // SAFE | CAUTION | DANGEROUS
       projection:null, dnaHash:null
     };
   }
@@ -109,10 +126,13 @@ function resetTab(tabId, url) {
   s.currentSessionRisk=0; s.historicalRisk=0; s.trustOverride=false;
   s.riskScore=0; s.riskLevel='LOW';
   s.staticScore=0; s.behavioralScore=0; s.reputationScore=0;
+  s.securityLayerScore=0; s.certWarning=null; s.webAdvisorStatus='SAFE';
   s.projection=null; s.dnaHash=null;
   tabBehavior[tabId]   = null;
   tabStaticCache[tabId] = null;
   riskDebounce[tabId]  = 0;
+  overlayDismissed[tabId] = false;
+  certWarningDismissed[tabId] = false;
   if (url) { try { s.domain = clean(new URL(url).hostname); } catch {} }
 }
 
@@ -135,10 +155,13 @@ function isTracker(domain) {
 
 function isStrictBlocked(domain) {
   if (!strictMode) return false;
+  if (REDIRECT_DOMAINS.has(domain)) return true;
   const tld = (domain.split('.').pop()||'').toLowerCase();
   if (STRICT_TLDS.has(tld)) return true;
-  const name = domain.split('.').slice(-2,-1)[0] || '';
-  if (name.length < 4) return true;
+  const parts = domain.split('.');
+  const name = parts.slice(-2,-1)[0] || '';
+  // Block very short domain names (< 4 chars, likely suspicious)
+  if (name.length < 4 && parts.length <= 3) return true;
   return false;
 }
 
@@ -153,12 +176,13 @@ const KNOWN_TRACKER_ROOTS = new Set([
   'heapanalytics.com','intercom.io'
 ]);
 
-function computeStaticScore({ url='', domain='', headers={}, cookies=[] }) {
+function computeStaticScore({ url='', domain='', headers={}, cookies=[], redirectCount=0, thirdPartyDomains=[] }) {
   let score = 0;
   const breakdown = [];
   const h = {};
   for (const [k,v] of Object.entries(headers)) h[k.toLowerCase()] = v;
   const isHTTPS = url.startsWith('https://');
+
   if (!h['content-security-policy'])   { score+=10; breakdown.push({ factor:'Missing CSP', delta:10 }); }
   if (!h['strict-transport-security']) { score+=15; breakdown.push({ factor:'Missing HSTS', delta:15 }); }
   if (!h['x-frame-options'])           { score+=8;  breakdown.push({ factor:'Missing X-Frame-Options', delta:8 }); }
@@ -167,6 +191,21 @@ function computeStaticScore({ url='', domain='', headers={}, cookies=[] }) {
   if (!h['x-content-type-options'] || h['x-content-type-options'].toLowerCase()!=='nosniff')
                                        { score+=5;  breakdown.push({ factor:'Missing X-Content-Type-Options', delta:5 }); }
   if (!isHTTPS)                        { score+=30; breakdown.push({ factor:'Unencrypted HTTP', delta:30 }); }
+
+  // Mixed HTTP content on HTTPS
+  if (isHTTPS) {
+    const csp = (h['content-security-policy']||'').toLowerCase();
+    if (!csp.includes('upgrade-insecure-requests') && !csp.includes('block-all-mixed-content')) {
+      score+=8; breakdown.push({ factor:'Mixed content risk (no CSP upgrade directive)', delta:8 });
+    }
+  }
+
+  // Long redirect chains
+  if (redirectCount >= 3) { const d=Math.min(15,redirectCount*3); score+=d; breakdown.push({ factor:`Long redirect chain (${redirectCount} hops)`, delta:d }); }
+
+  // Excessive third-party domains
+  if (thirdPartyDomains.length > 6) { const d=Math.min(15,Math.floor(thirdPartyDomains.length/2)); score+=d; breakdown.push({ factor:`Excessive 3rd-party domains (${thirdPartyDomains.length})`, delta:d }); }
+
   if (Array.isArray(cookies)) {
     let ins=0, ssn=0;
     for (const c of cookies) {
@@ -177,7 +216,7 @@ function computeStaticScore({ url='', domain='', headers={}, cookies=[] }) {
     if (ins>0) { const d=Math.min(20,ins*5); score+=d; breakdown.push({ factor:`${ins} cookie(s) missing Secure flag`, delta:d }); }
     if (ssn>0) { const d=Math.min(16,ssn*8); score+=d; breakdown.push({ factor:`${ssn} SameSite=None without Secure`, delta:d }); }
   }
-  const tld = domain.split('.').pop().toLowerCase();
+  const tld = (domain.split('.').pop()||'').toLowerCase();
   if (SUSPICIOUS_TLDS.has(tld)) { score+=20; breakdown.push({ factor:`Suspicious TLD (.${tld})`, delta:20 }); }
   const root = domain.split('.').slice(-2).join('.').toLowerCase();
   if (KNOWN_TRACKER_ROOTS.has(root)||KNOWN_TRACKER_ROOTS.has(domain)) { score+=10; breakdown.push({ factor:'Known tracker domain', delta:10 }); }
@@ -227,7 +266,20 @@ function projectRisk(history=[], clusterBoost=0, current=0) {
   return Math.round(Math.min(100,Math.max(0,proj)));
 }
 
-// ── Multi-Layer Risk Calculation ──────────────────────────────────────────────
+// ── Security Layer Score ───────────────────────────────────────────────────────
+function computeSecurityLayerScore(certWarning) {
+  if (!certWarning) return 50; // unknown = neutral
+  return certWarning.securityHeadersScore || 0;
+}
+
+// ── WebAdvisor Status ─────────────────────────────────────────────────────────
+function getWebAdvisorStatus(score) {
+  if (score <= 25) return 'SAFE';
+  if (score <= 60) return 'CAUTION';
+  return 'DANGEROUS';
+}
+
+// ── Multi-Layer Risk Calculation (v4.0: 35/30/20/15 weights) ──────────────────
 async function calcRisk(tabId, domain) {
   const s  = getTabStats(tabId);
   const bh = getTabBehavior(tabId);
@@ -245,6 +297,12 @@ async function calcRisk(tabId, domain) {
   // Static score — always computed (use cached or 0 if not yet received)
   const staticScore = tabStaticCache[tabId]?.staticScore ?? 0;
 
+  // Security layer score (from cert/header analysis — 0–100, inverted to risk)
+  const certWarning = tabStaticCache[tabId]?.certWarning || null;
+  const secHeaderScore = computeSecurityLayerScore(certWarning); // 0–100 (higher = safer)
+  // Invert: lower headers score = higher security layer risk
+  const securityLayerRisk = Math.round(100 - secHeaderScore);
+
   const reputation = Math.min(100,Math.round(
     ((s.trackerCount||0)>0?Math.min(50,(s.trackerCount||0)*5):0)+reputBoost
   ));
@@ -257,21 +315,30 @@ async function calcRisk(tabId, domain) {
     if (dh.length) userHistory=Math.round(dh.reduce((a,h)=>a+h.score,0)/dh.length);
   } catch {}
 
-  const final=Math.round(Math.min(100,Math.max(0,
-    0.40*behavioral+0.30*staticScore+0.20*reputation+0.10*userHistory
+  // v4.0 weights: 0.35 Behavioral + 0.30 Static + 0.20 Reputation + 0.15 SecurityLayer
+  let final=Math.round(Math.min(100,Math.max(0,
+    0.35*behavioral+0.30*staticScore+0.20*reputation+0.15*securityLayerRisk
   )));
+
+  // Certificate invalid → force minimum risk 70
+  if (certWarning?.isInvalid && final < 70) final = 70;
+
   const level=final>=75?'CRITICAL':final>=50?'HIGH':final>=20?'MODERATE':'LOW';
+  const webAdvisorStatus = getWebAdvisorStatus(final);
 
   // Store scores (always — trust only affects display)
   s.behavioralScore    = behavioral;
   s.staticScore        = staticScore;
   s.reputationScore    = reputation;
+  s.securityLayerScore = secHeaderScore;
+  s.certWarning        = certWarning;
   s.currentSessionRisk = final;
   s.historicalRisk     = userHistory;
   s.riskScore          = final;
   s.riskLevel          = level;
+  s.webAdvisorStatus   = webAdvisorStatus;
 
-  return { score:final, level, behavioral, staticScore, reputation, userHistory };
+  return { score:final, level, behavioral, staticScore, reputation, userHistory, securityLayerRisk, secHeaderScore, webAdvisorStatus };
 }
 
 // ── Debounced Risk Update ─────────────────────────────────────────────────────
@@ -292,6 +359,48 @@ async function updateRisk(tabId) {
       trackers:s.trackerCount, cookies:s.cookieCount,
       timestamp:Date.now()
     });
+  } catch {}
+
+  // ── Persist domain history timeline ─────────────────────────────────────────
+  try {
+    const histKey = `history::${s.domain}`;
+    const existing = await chrome.storage.local.get(histKey);
+    const hist = existing[histKey] || { riskTimeline:[], trackerCountTimeline:[], securityTimeline:[] };
+    const ts = Date.now();
+    hist.riskTimeline.push({ score:r.score, ts });
+    hist.trackerCountTimeline.push({ count:s.trackerCount, ts });
+    hist.securityTimeline.push({ score:r.secHeaderScore||0, ts });
+    // Keep last 100 entries per timeline
+    if (hist.riskTimeline.length > 100) hist.riskTimeline = hist.riskTimeline.slice(-100);
+    if (hist.trackerCountTimeline.length > 100) hist.trackerCountTimeline = hist.trackerCountTimeline.slice(-100);
+    if (hist.securityTimeline.length > 100) hist.securityTimeline = hist.securityTimeline.slice(-100);
+    await chrome.storage.local.set({ [histKey]: hist });
+  } catch {}
+
+  // ── Trigger overlay/cert warning if needed ───────────────────────────────────
+  try {
+    const s2 = getTabStats(tabId);
+    const cert = tabStaticCache[tabId]?.certWarning;
+
+    // Cert warning popup (inject into page)
+    if (cert?.hasWarning && !certWarningDismissed[tabId]) {
+      chrome.tabs.sendMessage(tabId, {
+        type: 'SHOW_CERT_WARNING',
+        certWarning: cert,
+        domain: s2.domain
+      }).catch(()=>{});
+    }
+
+    // Full-page overlay if risk > 70 or cert invalid
+    if ((s2.riskScore > 70 || cert?.isInvalid) && !overlayDismissed[tabId]) {
+      chrome.tabs.sendMessage(tabId, {
+        type: 'SHOW_OVERLAY_WARNING',
+        riskScore: s2.riskScore,
+        riskLevel: s2.riskLevel,
+        certWarning: cert,
+        domain: s2.domain
+      }).catch(()=>{});
+    }
   } catch {}
 }
 
@@ -440,12 +549,25 @@ function setupListeners() {
       for (const h of (details.responseHeaders||[])) headers[h.name.toLowerCase()]=h.value;
       let cookies=[];
       try { cookies=await chrome.cookies.getAll({domain}); } catch {}
-      const result=computeStaticScore({ url:details.url, domain, headers, cookies });
-      tabStaticCache[details.tabId]={ ...result, url:details.url, domain, rawHeaders:headers };
-      log(`Static score for ${domain}: ${result.staticScore}`);
+      const bh=getTabBehavior(details.tabId);
+      const result=computeStaticScore({
+        url:details.url, domain, headers, cookies,
+        thirdPartyDomains: bh.networkInfo.thirdPartyDomains
+      });
+      // Cert warning evaluation
+      const certWarning=CertWarningEngine.evaluate({
+        url:details.url, headers,
+        statusCode:details.statusCode||200
+      });
+      tabStaticCache[details.tabId]={
+        ...result, url:details.url, domain,
+        rawHeaders:headers, certWarning
+      };
+      log(`Static score for ${domain}: ${result.staticScore} | Cert: ${certWarning.severity}`);
       // Trigger risk update after static analysis
       const s=getTabStats(details.tabId);
       if (!s.domain) s.domain=domain;
+      s.certWarning=certWarning;
       await updateRisk(details.tabId);
     },
     { urls:['<all_urls>'] },
@@ -489,9 +611,9 @@ function setupListeners() {
 
     // If static cache is still null (no headers received), compute minimum static score
     if (!tabStaticCache[tabId]) {
-      const isHTTPS=tab.url.startsWith('https://');
       const minScore=computeStaticScore({ url:tab.url, domain, headers:{}, cookies:[] });
-      tabStaticCache[tabId]={ ...minScore, url:tab.url, domain, rawHeaders:{} };
+      const minCertWarning=CertWarningEngine.evaluate({ url:tab.url, headers:{} });
+      tabStaticCache[tabId]={ ...minScore, url:tab.url, domain, rawHeaders:{}, certWarning:minCertWarning };
     }
 
     // Always update risk on page complete
@@ -534,6 +656,8 @@ function setupListeners() {
     delete tabBehavior[tabId];
     delete tabStaticCache[tabId];
     delete riskDebounce[tabId];
+    delete overlayDismissed[tabId];
+    delete certWarningDismissed[tabId];
   });
 }
 
@@ -544,7 +668,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const action=message.action||message.type||'';
       log('←',action);
 
-      if (action==='GET_TAB_STATS') {
+      if (action==='GET_TAB_STATS'||action==='GET_STATS') {
         const [tab]=await chrome.tabs.query({ active:true, currentWindow:true });
         if (!tab||tab.url?.startsWith('chrome://')) {
           sendResponse({ riskScore:0, riskLevel:'N/A', trackerCount:0, cookieCount:0, adCount:0, blockedAds:0,
@@ -558,10 +682,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const trusted=!!(domain&&trustedDomains[domain]);
         stats.trustOverride=trusted;
         const sc=tabStaticCache[tab.id]||{};
+        const effectiveScore = trusted ? 0 : stats.riskScore;
         sendResponse({
           domain,
-          riskScore:        trusted?0:stats.riskScore,
-          riskLevel:        trusted?'LOW':stats.riskLevel,
+          riskScore:         effectiveScore,
+          riskLevel:         trusted?'LOW':stats.riskLevel,
+          webAdvisorStatus:  trusted?'SAFE': getWebAdvisorStatus(effectiveScore),
           currentSessionRisk:stats.currentSessionRisk,
           historicalRisk:    stats.historicalRisk,
           trusted, trustOverride:trusted,
@@ -573,6 +699,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           staticScore:     stats.staticScore,
           behavioralScore: stats.behavioralScore,
           reputationScore: stats.reputationScore,
+          securityLayerScore: stats.securityLayerScore||0,
+          certWarning:     trusted?null:(sc.certWarning||null),
           staticBreakdown: sc.breakdown||[],
           rawHeaders:      sc.rawHeaders||{},
           dnaHash:         stats.dnaHash,
@@ -807,6 +935,109 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } catch(e) { sendResponse({success:false,nodes:[],links:[],error:e.message}); }
       }
 
+      else if (action==='GET_SECURITY_LAYER') {
+        const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+        const sc=tab?tabStaticCache[tab.id]:null;
+        const s=tab?getTabStats(tab.id):null;
+        const cw=sc?.certWarning||null;
+        sendResponse({
+          success:true,
+          certStatus:      cw?.certStatusLabel||'Unknown',
+          certSeverity:    cw?.severity||'NONE',
+          isInvalid:       cw?.isInvalid||false,
+          hasWarning:      cw?.hasWarning||false,
+          encryption:      cw?.encryptionLabel||'Unknown',
+          encryptionRaw:   cw?.encryption||'UNKNOWN',
+          hsts:            cw?.hsts||false,
+          mixedContent:    cw?.mixedContent||false,
+          securityHeadersScore: cw?.securityHeadersScore||0,
+          securityLayerScore:   s?.securityLayerScore||0,
+          certIssues:      cw?.issues||[],
+          certReasons:     cw?.reasons||[],
+          isHTTPS:         cw?.isHTTPS||false,
+        });
+      }
+
+      else if (action==='GET_ADVISORY') {
+        const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+        const s=tab?getTabStats(tab.id):null;
+        const bh=tab?getTabBehavior(tab.id):null;
+        const sc=tab?tabStaticCache[tab.id]:null;
+        const trusted=!!(s?.domain&&trustedDomains[s.domain]);
+        const advice=AdvisoryEngine.generateAdvice({
+          trackerCount:     s?.trackerCount||0,
+          adCount:          s?.adCount||0,
+          fingerprintCount: s?.fingerprintCount||0,
+          cookieCount:      s?.cookieCount||0,
+          riskScore:        s?.riskScore||0,
+          staticBreakdown:  sc?.breakdown||[],
+          certWarning:      sc?.certWarning||null,
+          thirdPartyDomains:bh?.networkInfo?.thirdPartyDomains||[],
+          strictMode,
+          trusted,
+          clusterName:      s?dnaCluster(bh?.apiCounts||{}).name:'',
+          blockedCount:     adsBlockedCount+trackersBlockedCount,
+        });
+        sendResponse({success:true,...advice});
+      }
+
+      else if (action==='GET_DOMAIN_HISTORY') {
+        const domain=message.domain;
+        if (!domain) { sendResponse({success:false,error:'No domain'}); return; }
+        try {
+          const histKey=`history::${domain}`;
+          const stored=await chrome.storage.local.get(histKey);
+          const hist=stored[histKey]||{riskTimeline:[],trackerCountTimeline:[],securityTimeline:[]};
+          sendResponse({success:true,...hist});
+        } catch(e) { sendResponse({success:false,error:e.message}); }
+      }
+
+      else if (action==='DISMISS_OVERLAY') {
+        const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+        if (tab) {
+          overlayDismissed[tab.id]=true;
+          // Trust if requested
+          if (message.trust && tab) {
+            const s=getTabStats(tab.id);
+            if (s.domain) {
+              trustedDomains[s.domain]={ts:Date.now(),reason:'overlay_trust'};
+              try { await chrome.storage.local.set({trustedDomains}); } catch {}
+            }
+          }
+        }
+        sendResponse({success:true});
+      }
+
+      else if (action==='DISMISS_CERT_WARNING') {
+        const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+        if (tab) {
+          certWarningDismissed[tab.id]=true;
+          if (message.trust) {
+            const s=getTabStats(tab.id);
+            if (s.domain) {
+              trustedDomains[s.domain]={ts:Date.now(),reason:'cert_trust'};
+              try { await chrome.storage.local.set({trustedDomains}); } catch {}
+            }
+          }
+        }
+        sendResponse({success:true});
+      }
+
+      else if (action==='GET_BLOCKED_LOG') {
+        // Serve in-memory blocked log (latest 100 entries)
+        const items = blockedLog.slice(0, 100).map(e => ({
+          domain: e.domain, type: e.type, ts: e.timestamp,
+          url: e.fullURL || e.domain
+        }));
+        sendResponse({ success: true, items });
+      }
+
+      else if (action==='CLEAR_BLOCKED_LOG') {
+        blockedLog.length = 0;
+        try { await storageManager.clearBlockedRequests?.(); } catch {}
+        sendResponse({ success: true });
+      }
+
       else if (action==='CLEAR_ALL') {
         try { await storageManager.clearAll(); } catch {}
         Object.keys(tabStats).forEach(k=>delete tabStats[k]);
@@ -841,7 +1072,7 @@ if (chrome.alarms) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
-  log('Initializing v3.0...');
+  log('Initializing v4.0 — WebAdvisor Mode...');
   try { await storageManager.init(); log('StorageManager ready'); }
   catch(e) { warn('StorageManager init failed:',e.message); }
 
@@ -861,7 +1092,7 @@ async function init() {
 
   await setupAdBlocking();
   setupListeners();
-  log('PRIVISEE-X v3.0 ready ✓');
+  log('PRIVISEE-X v4.0 ready ✓ — WebAdvisor + CertWarning + Advisory Engine active');
 }
 
 init().catch(e=>console.error('[PRIVISEE-X BG] Fatal init error:',e));

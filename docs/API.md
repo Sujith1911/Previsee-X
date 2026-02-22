@@ -372,18 +372,22 @@ Notify background worker of configuration changes.
   type: 'CONFIG_UPDATED',
   config: {
     weights: {
-      tracker: number,
-      cookie: number,
-      fingerprint: number,
-      anomaly: number,
-      thirdParty: number
+      behavioral: number, // 35% default — trackers/fingerprint/cookies
+      static:     number, // 30% default — headers/HTTP/redirects
+      reputation: number, // 20% default — DNA cluster/3rd-party
+      security:   number  // 15% default — cert/HSTS/mixed content
     },
     features: {
-      trackerDetection: boolean,
+      trackerDetection:    boolean,
       fingerprintDetection: boolean,
-      anomalyDetection: boolean,
-      graphIntelligence: boolean,
-      federatedLearning: boolean
+      anomalyDetection:    boolean,
+      graphIntelligence:   boolean,
+      staticIntelligence:  boolean,
+      certWarning:         boolean,  // v4.0
+      overlayWarning:      boolean,  // v4.0
+      researchMode:        boolean,
+      strictMode:          boolean,
+      federatedLearning:   boolean
     },
     retentionDays: number
   }
@@ -587,6 +591,163 @@ To prevent performance issues:
 
 ## Versioning
 
-API Version: **1.0.0**
+API Version: **4.0.0**
 
 Breaking changes will increment major version. Check `chrome.runtime.getManifest().version` for extension version.
+
+---
+
+## v4.0 WebAdvisor API Reference
+
+All actions are sent via `chrome.runtime.sendMessage({ action: '...' })`. All responses include `{ success: boolean }` at minimum.
+
+### GET_STATS (alias: GET_TAB_STATS)
+
+Fetch current tab's complete v4.0 risk snapshot.
+
+```javascript
+// Response (key fields)
+{
+  domain: string,
+  riskScore: number,             // 0–100, weighted composite
+  riskLevel: string,             // LOW | MODERATE | HIGH | CRITICAL
+  webAdvisorStatus: string,      // SAFE | CAUTION | DANGEROUS
+  behavioralScore: number,       // 0–100
+  staticScore: number,           // 0–100
+  reputationScore: number,       // 0–100
+  securityLayerScore: number,    // 0–100 (higher = better)
+  trackerCount: number,
+  cookieCount: number,
+  adCount: number,
+  fingerprintCount: number,
+  adsBlockedCount: number,       // global session counter
+  trackersBlockedCount: number,  // global session counter
+  dnaHash: string,               // behavioral fingerprint hash
+  projection: object,            // { projectedRiskIn30Days, confidence, trend, ... }
+  trusted: boolean,              // trust override active
+  strictMode: boolean,
+  staticBreakdown: Array,        // [{ factor, delta }]
+  rawHeaders: object             // { header-name: value }
+}
+```
+
+---
+
+### GET_SECURITY_LAYER
+
+Fetch TLS/certificate and security header analysis.
+
+```javascript
+// Response
+{
+  success: true,
+  certStatus: string,            // e.g. "Valid" | "Invalid" | "Self-signed"
+  certSeverity: string,          // NONE | WARNING | CRITICAL
+  isInvalid: boolean,
+  hasWarning: boolean,
+  encryption: string,            // Human label e.g. "TLS 1.3 (Strong)"
+  encryptionRaw: string,         // STRONG | WEAK | NONE
+  hsts: boolean,
+  mixedContent: boolean,
+  securityHeadersScore: number,  // 0–100
+  securityLayerScore: number,
+  certIssues: string[],
+  isHTTPS: boolean
+}
+```
+
+---
+
+### GET_ADVISORY
+
+Fetch contextual advice from AdvisoryEngine.
+
+```javascript
+// Response
+{
+  success: true,
+  observations: string[],      // e.g. ["5 trackers detected", "HSTS missing"]
+  recommendations: string[],   // e.g. ["Enable Strict Mode", "Delete cookies"]
+  riskSummary: string          // One-line summary
+}
+```
+
+---
+
+### GET_DOMAIN_HISTORY
+
+Fetch historical risk/tracker/security timelines for a domain.
+
+```javascript
+// Request
+{ action: 'GET_DOMAIN_HISTORY', domain: 'example.com' }
+
+// Response
+{
+  success: true,
+  riskTimeline:          [{ score: number, ts: number }],
+  trackerCountTimeline:  [{ count: number, ts: number }],
+  securityTimeline:      [{ score: number, ts: number }]
+}
+```
+
+---
+
+### GET_BLOCKED_LOG
+
+Fetch the in-memory blocked request log (latest 100 entries).
+
+```javascript
+// Response
+{
+  success: true,
+  items: [{ domain: string, type: 'ad'|'tracker'|'redirect', ts: number, url: string }]
+}
+```
+
+---
+
+### CLEAR_BLOCKED_LOG
+
+Clear the in-memory blocked log. `{ action: 'CLEAR_BLOCKED_LOG' }` → `{ success: true }`
+
+---
+
+### DISMISS_OVERLAY
+
+Dismiss the full-page overlay warning for the current tab.
+
+```javascript
+{ action: 'DISMISS_OVERLAY', trust: boolean }  // trust: true → also trusts the domain
+// Response: { success: true }
+```
+
+---
+
+### DISMISS_CERT_WARNING
+
+Dismiss the certificate warning modal for the current tab.
+
+```javascript
+{ action: 'DISMISS_CERT_WARNING', trust: boolean }
+// Response: { success: true }
+```
+
+---
+
+### SET_STRICT_MODE
+
+```javascript
+{ action: 'SET_STRICT_MODE', enabled: boolean }
+// Response: { success: true, strictMode: boolean }
+```
+
+---
+
+### TRUST_DOMAIN / UNTRUST_DOMAIN
+
+```javascript
+{ action: 'TRUST_DOMAIN',   domain: string, reason?: string }
+{ action: 'UNTRUST_DOMAIN', domain: string }
+// Both respond: { success: true }
+```

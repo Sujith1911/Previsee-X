@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PRIVISEE-X",
-  "version": "3.0.0",
-  "description": "PRIVISEE-X v3.0 — Local Privacy Firewall, Behavioral Risk Engine, Static Security Analyzer, Redirect Protection, and Predictive Intelligence. 100% local, zero data transmission.",
+  "version": "4.0.0",
+  "description": "PRIVISEE-X v4.0 — WebAdvisor Mode: Certificate Warning Engine, Predictive Risk Advisor, Explainable Privacy Firewall, DNS-level Ad Blocking. 100% local, zero data transmission.",
   "permissions": [
     "storage",
     "cookies",
@@ -38,7 +38,7 @@
   "options_page": "dashboard.html",
   "web_accessible_resources": [
     {
-      "resources": ["models/*", "models/tracker_classifier/*", "lib/*"],
+      "resources": ["models/*", "models/tracker_classifier/*", "lib/*", "security/*", "risk/*"],
       "matches": ["<all_urls>"]
     }
   ]
