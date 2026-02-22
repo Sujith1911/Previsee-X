@@ -350,25 +350,32 @@
   }
 
   // ── Listen for messages from background ───────────────────────────────────
+  function handleMessage(message) {
+    if (!message || !message.type) return;
+    if (message.type === 'SHOW_OVERLAY_WARNING') {
+      setTimeout(() => injectOverlay(message), 600);
+    } else if (message.type === 'SHOW_CERT_WARNING') {
+      setTimeout(() => injectCertWarning(message), 900);
+    }
+  }
+  try { chrome.runtime.onMessage.addListener(handleMessage); } catch {}
+  // Expose globally so scripting.executeScript fallback can reach us
+  window.__privisee_handleMessage = handleMessage;
+
+  // ── SPA Navigation: reset injection flags on soft nav ────────────────────
   try {
-    chrome.runtime.onMessage.addListener((message) => {
-      if (!message || !message.type) return;
-      if (message.type === 'SHOW_OVERLAY_WARNING') {
-        // Small delay to let page render first
-        setTimeout(() => injectOverlay(message), 800);
-      } else if (message.type === 'SHOW_CERT_WARNING') {
-        setTimeout(() => injectCertWarning(message), 1200);
-      }
-    });
+    const _push    = history.pushState;
+    const _replace = history.replaceState;
+    const resetFlags = () => { overlayInjected = false; certWarningInjected = false; };
+    history.pushState    = function(...a) { resetFlags(); return _push.apply(this, a); };
+    history.replaceState = function(...a) { resetFlags(); return _replace.apply(this, a); };
+    window.addEventListener('popstate',   resetFlags);
+    window.addEventListener('hashchange', resetFlags);
   } catch {}
 
   // ── Initial Page Load Report ───────────────────────────────────────────────
-  window.addEventListener('load', () => {
-    setTimeout(sendReport, 3000);
-  });
-
-  // Final report on page unload
-  window.addEventListener('pagehide', sendReport);
+  window.addEventListener('load', () => { setTimeout(sendReport, 3000); });
+  window.addEventListener('pagehide',     sendReport);
   window.addEventListener('beforeunload', sendReport);
 
 })();

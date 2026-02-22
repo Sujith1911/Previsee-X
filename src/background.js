@@ -382,25 +382,83 @@ async function updateRisk(tabId) {
     const s2 = getTabStats(tabId);
     const cert = tabStaticCache[tabId]?.certWarning;
 
-    // Cert warning popup (inject into page)
+    // Cert warning modal
     if (cert?.hasWarning && !certWarningDismissed[tabId]) {
-      chrome.tabs.sendMessage(tabId, {
+      await sendToContentScript(tabId, {
         type: 'SHOW_CERT_WARNING',
         certWarning: cert,
         domain: s2.domain
-      }).catch(()=>{});
+      });
     }
 
     // Full-page overlay if risk > 70 or cert invalid
     if ((s2.riskScore > 70 || cert?.isInvalid) && !overlayDismissed[tabId]) {
-      chrome.tabs.sendMessage(tabId, {
+      await sendToContentScript(tabId, {
         type: 'SHOW_OVERLAY_WARNING',
         riskScore: s2.riskScore,
         riskLevel: s2.riskLevel,
         certWarning: cert,
         domain: s2.domain
-      }).catch(()=>{});
+      });
     }
+  } catch {}
+}
+
+/**
+ * Resilient content-script messenger.
+ * Tries sendMessage first; if the content script isn't ready yet, waits up to
+ * 4 s for it to register, then retries once via scripting.executeScript.
+ */
+async function sendToContentScript(tabId, payload, retryMs = 4000) {
+  let tab;
+  try { [tab] = await chrome.tabs.query({ active: true, currentWindow: true }); } catch {}
+  // Don't try on chrome:// pages or error pages
+  const url = tab?.url || '';
+  if (url.startsWith('chrome://') || url.startsWith('chrome-error://')) return;
+
+  try {
+    await chrome.tabs.sendMessage(tabId, payload);
+    return; // success
+  } catch {
+    // Content script not ready — inject inline via scripting
+  }
+
+  // Wait briefly then try scripting.executeScript as fallback
+  await new Promise(r => setTimeout(r, Math.min(retryMs, 2000)));
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (p) => {
+        // Prefer the exposed instance if content.js already ran
+        if (window.__privisee_handleMessage) {
+          window.__privisee_handleMessage(p);
+          return;
+        }
+        // Otherwise create a minimal inline overlay/modal
+        if (p.type === 'SHOW_OVERLAY_WARNING' && !document.getElementById('__privisee_overlay__')) {
+          const color = (p.riskScore >= 75) ? '#ef4444' : '#f97316';
+          const reasons = [];
+          if (p.certWarning?.isInvalid) {
+            for (const r of (p.certWarning.reasons || [])) reasons.push(r);
+          }
+          if (p.riskScore > 70) reasons.push(`High privacy risk detected (score: ${p.riskScore}/100)`);
+          const overlay = document.createElement('div');
+          overlay.id = '__privisee_overlay__';
+          overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.92);z-index:2147483647;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif;backdrop-filter:blur(4px)';
+          overlay.innerHTML = `<div style="background:#0d0f18;border:1px solid ${color}40;border-radius:16px;padding:32px;max-width:440px;width:90%;text-align:center;box-shadow:0 0 60px ${color}20"><div style="font-size:48px;margin-bottom:12px">⚠️</div><div style="font-size:11px;font-weight:700;letter-spacing:2px;color:${color};text-transform:uppercase;margin-bottom:8px">PRIVISEE-X WARNING</div><div style="font-size:20px;font-weight:800;color:#e2e8f0;margin-bottom:6px">${p.domain}</div><div style="font-size:13px;color:#94a3b8;margin-bottom:16px">This site may be unsafe</div><div style="background:#1e2235;border-radius:10px;padding:12px 16px;text-align:left;margin-bottom:16px">${reasons.map(r=>`<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px;font-size:12px;color:#cbd5e1"><span style="color:${color};flex-shrink:0">•</span>${r}</div>`).join('') || `<div style="font-size:12px;color:#94a3b8">Risk score ${p.riskScore}/100 — ${p.riskLevel}</div>`}</div><div style="display:flex;gap:10px;justify-content:center"><button onclick="window.history.back()" style="background:${color};color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:700;font-size:13px">Leave Site</button><button onclick="this.closest('#__privisee_overlay__').remove();try{chrome.runtime.sendMessage({type:'DISMISS_OVERLAY',trust:false})}catch{}" style="background:#1e2235;color:#94a3b8;border:1px solid #334155;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:13px">Proceed Anyway</button></div></div>`;
+          document.documentElement.appendChild(overlay);
+        }
+        if (p.type === 'SHOW_CERT_WARNING' && !document.getElementById('__privisee_cert_modal__')) {
+          const color = p.certWarning?.severity === 'CRITICAL' ? '#ef4444' : '#f59e0b';
+          const modal = document.createElement('div');
+          modal.id = '__privisee_cert_modal__';
+          modal.style.cssText = `position:fixed;bottom:20px;right:20px;width:340px;background:#0d0f18;border:1px solid ${color}50;border-radius:12px;padding:16px;z-index:2147483646;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-shadow:0 8px 32px rgba(0,0,0,0.6)`;
+          modal.innerHTML = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="font-size:18px">🔒</span><span style="font-size:12px;font-weight:700;color:${color}">Security Warning — ${p.domain}</span><button onclick="this.closest('#__privisee_cert_modal__').remove()" style="margin-left:auto;background:none;border:none;color:#64748b;cursor:pointer;font-size:16px">×</button></div><div style="font-size:11px;color:#94a3b8;margin-bottom:8px">${(p.certWarning?.reasons||[]).map(r=>`<div style="margin-bottom:4px;font-size:11px;color:#cbd5e1">• ${r}</div>`).join('')}</div><div style="font-size:10px;color:${color};font-weight:700">Risk Level: ${p.certWarning?.severity||'WARNING'}</div>`;
+          document.documentElement.appendChild(modal);
+        }
+      },
+      args: [payload]
+    });
   } catch {}
 }
 
@@ -590,6 +648,69 @@ function setupListeners() {
     }
   });
 
+  // ── Cert error detection (ERR_CERT_* / ERR_SSL_*) ────────────────────────
+  // This fires BEFORE onHeadersReceived when Chrome blocks a page due to bad TLS.
+  chrome.webNavigation.onErrorOccurred.addListener(async (details) => {
+    if (details.frameId !== 0) return;  // main frame only
+    const errorCode = details.error || '';
+    // Only process cert / SSL / TLS related errors
+    const isCertError = errorCode.includes('CERT') || errorCode.includes('SSL') ||
+                        errorCode.includes('TLS') || errorCode.includes('ERR_SSL');
+    if (!isCertError) return;
+
+    let domain;
+    try { domain = clean(new URL(details.url).hostname); } catch { return; }
+    if (!domain || CDN_WHITELIST.has(domain) || userWhitelist.has(domain)) return;
+
+    log(`[CertError] ${errorCode} for ${domain}`);
+
+    // Build cert warning from error code
+    const certWarning = CertWarningEngine.evaluateFromErrorCode(errorCode, details.url);
+    if (!certWarning) return;
+
+    // Store in tabStaticCache so popup and updateRisk can read it
+    const tabId = details.tabId;
+    if (!tabStaticCache[tabId]) {
+      const minScore = computeStaticScore({ url: details.url, domain, headers: {}, cookies: [] });
+      tabStaticCache[tabId] = { ...minScore, url: details.url, domain, rawHeaders: {}, certWarning };
+    } else {
+      tabStaticCache[tabId].certWarning = certWarning;
+    }
+
+    // Set domain on tab stats
+    const s = getTabStats(tabId);
+    s.domain = domain;
+    s.certWarning = certWarning;
+
+    // Force risk update — will set riskScore >= 70 due to isInvalid
+    await updateRisk(tabId);
+
+    // Show overlay immediately via scripting (page is Chrome's error page, content.js not injected)
+    // Only show if not dismissed
+    if (!overlayDismissed[tabId]) {
+      try {
+        // Inject overlay directly into the chrome-error:// page via scripting
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          func: (payload) => {
+            if (document.getElementById('__privisee_overlay__')) return;
+            const color = '#ef4444';
+            const reasons = (payload.certWarning?.reasons || []);
+            const overlay = document.createElement('div');
+            overlay.id = '__privisee_overlay__';
+            overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.92);z-index:2147483647;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif;backdrop-filter:blur(4px)';
+            overlay.innerHTML = `<div style="background:#0d0f18;border:1px solid ${color}40;border-radius:16px;padding:32px;max-width:440px;width:90%;text-align:center;box-shadow:0 0 60px ${color}20"><div style="font-size:48px;margin-bottom:12px">🛑</div><div style="font-size:11px;font-weight:700;letter-spacing:2px;color:${color};text-transform:uppercase;margin-bottom:8px">PRIVISEE-X — CERTIFICATE ERROR</div><div style="font-size:20px;font-weight:800;color:#e2e8f0;margin-bottom:6px">${payload.domain}</div><div style="font-size:13px;color:#94a3b8;margin-bottom:16px">${payload.certWarning?.certStatusLabel || 'Certificate Invalid'}</div><div style="background:#1e2235;border-radius:10px;padding:12px 16px;text-align:left;margin-bottom:16px">${reasons.map(r=>`<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px;font-size:12px;color:#cbd5e1"><span style="color:${color};flex-shrink:0">•</span>${r}</div>`).join('')}</div><div style="font-size:11px;color:#64748b">Risk score forced to 70+ due to certificate failure</div></div>`;
+            document.body?.appendChild(overlay) || document.documentElement.appendChild(overlay);
+          },
+          args: [{ domain, certWarning, riskScore: s.riskScore }]
+        });
+      } catch (e) {
+        // scripting into chrome-error:// pages is blocked — that's expected for some error pages
+        log(`[CertError] Could not inject overlay into error page: ${e.message}`);
+      }
+    }
+  });
+
   // Tab loading — reset per-tab state
   chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status==='loading'&&tab.url&&!tab.url.startsWith('chrome://')) {
@@ -610,10 +731,15 @@ function setupListeners() {
     s.domain=domain;
 
     // If static cache is still null (no headers received), compute minimum static score
+    // Preserve cert warning from onErrorOccurred if it was already stored
     if (!tabStaticCache[tabId]) {
-      const minScore=computeStaticScore({ url:tab.url, domain, headers:{}, cookies:[] });
-      const minCertWarning=CertWarningEngine.evaluate({ url:tab.url, headers:{} });
-      tabStaticCache[tabId]={ ...minScore, url:tab.url, domain, rawHeaders:{}, certWarning:minCertWarning };
+      const minScore = computeStaticScore({ url: tab.url, domain, headers: {}, cookies: [] });
+      // Only call evaluate() for URL-level inference; don't overwrite a real cert error
+      const minCertWarning = CertWarningEngine.evaluate({ url: tab.url, headers: {} });
+      tabStaticCache[tabId] = { ...minScore, url: tab.url, domain, rawHeaders: {}, certWarning: minCertWarning };
+    } else if (tabStaticCache[tabId].certWarning?.fromErrorCode) {
+      // Cert warning came from onErrorOccurred — preserve it, just fill in domain if missing
+      tabStaticCache[tabId].domain = domain;
     }
 
     // Always update risk on page complete
