@@ -127,11 +127,12 @@
 
 <!-- Header -->
 <header class="hdr">
-  <div class="brand"><h1>🛡️ PRIVISEE-X</h1><p id="lastUpdated">Privacy Intelligence Dashboard</p></div>
+  <div class="brand"><h1>🛡️ PRIVISEE-X</h1><p id="lastUpdated">Privacy Intelligence Dashboard v3.0</p></div>
   <div class="hdr-right">
     <span class="live">● LIVE</span>
+    <input class="srch" id="globalSearch" type="text" placeholder="🔎 Search domains, trackers, blocked…" style="width:220px">
     <button class="btn btn-sec" id="refreshBtn">🔄 Refresh</button>
-    <button class="btn btn-sec" id="exportBtn">📥 Export CSV</button>
+    <button class="btn btn-sec" id="exportBtn">📥 Export JSON</button>
     <button class="btn btn-danger" id="clearBtn">🗑️ Clear All</button>
   </div>
 </header>
@@ -155,6 +156,9 @@
     <div class="sc blocked-card">
       <div class="val" id="st-blocked">—</div><div class="lbl">🚫 Ads Blocked</div>
     </div>
+    <div class="sc" style="border-color:#f59e0b30;background:linear-gradient(135deg,#1a150d,#1e1a0d)">
+      <div class="val" id="st-trackers-blocked" style="color:var(--yellow)">—</div><div class="lbl">📡 Trackers Blkd</div>
+    </div>
     <div class="sc"><div class="val" id="st-ads" style="color:var(--orange)">—</div><div class="lbl">Ads Detected</div></div>
     <div class="sc"><div class="val" id="st-cookies">—</div><div class="lbl">Cookies</div></div>
     <div class="sc"><div class="val" id="st-fp">—</div><div class="lbl">Fingerprinting</div></div>
@@ -177,6 +181,7 @@
     <button class="tab-btn" data-tab="cookies">🍪 Cookies</button>
     <button class="tab-btn" data-tab="trackers">🕵️ Trackers</button>
     <button class="tab-btn" data-tab="ads">🚫 Blocked Ads</button>
+    <button class="tab-btn" data-tab="blocked">🔥 Firewall Log</button>
     <button class="tab-btn" data-tab="graph">🕸️ Tracker Graph</button>
     <button class="tab-btn" data-tab="research">🔬 Research</button>
   </div>
@@ -246,6 +251,24 @@
         <th>Risk</th><th>Actions</th>
       </tr></thead>
       <tbody id="adBody"></tbody></table>
+    </div>
+  </div>
+
+  <!-- ── Firewall Log ── -->
+  <div class="tab-panel" id="tab-blocked">
+    <div class="toolbar">
+      <input class="srch" id="blSearch" type="text" placeholder="🔍 Search domain or URL…">
+      <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px;margin-left:auto">
+        <input type="checkbox" id="showFullURLs"> Show Full URLs
+      </label>
+      <button class="btn btn-sm btn-danger" id="clearBlockedBtn">🗑 Clear Log</button>
+      <span class="cnt" id="blCnt"></span>
+    </div>
+    <div class="tw">
+      <table><thead><tr>
+        <th>Domain</th><th>Type</th><th>URL</th><th>Time</th>
+      </tr></thead>
+      <tbody id="blBody"></tbody></table>
     </div>
   </div>
 

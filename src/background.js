@@ -1,120 +1,91 @@
 /**
- * PRIVISEE-X v2.0 — Background Service Worker
- *
- * Pure JS implementation — no external engine imports that can crash.
- * All blocking/tracking/fingerprint detection is self-contained here.
- *
- * Features:
- *  ✅ Real ad blocking via declarativeNetRequest (navigation + resource)
- *  ✅ Navigation redirect ad tracking caught via webNavigation  
- *  ✅ Cookie delete also clears localStorage via chrome.scripting
- *  ✅ Per-site tracker persistence for dashboard
- *  ✅ Working delete/whitelist/CRUD for all data types
+ * PRIVISEE-X v3.0 — Background Service Worker
+ * Privacy Firewall + Behavioral Risk Engine + Static Analyzer
  */
 
 import { storageManager } from './storage/StorageManager.js';
 
 // ── Domain Lists ──────────────────────────────────────────────────────────────
-
-// AD domains — these get blocked via declarativeNetRequest (ALL resource types)
 const AD_DOMAINS = [
-  // Google Ads network
   'doubleclick.net','googlesyndication.com','adservice.google.com',
-  'googletagservices.com','pagead2.googlesyndication.com',
-  'tpc.googlesyndication.com','adwords.google.com',
-  // Amazon Ads
-  'amazon-adsystem.com','aax-us-east.amazon-adsystem.com','aax.amazon-adsystem.com',
-  // Facebook / Meta Ads
-  'connect.facebook.net','an.facebook.com','graph.facebook.com',
-  // Twitter / X Ads
-  'static.ads-twitter.com','ads.twitter.com','t.co',
-  // Programmatic / DSPs
+  'googletagservices.com','pagead2.googlesyndication.com','tpc.googlesyndication.com',
+  'amazon-adsystem.com','aax-us-east.amazon-adsystem.com',
+  'connect.facebook.net','an.facebook.com',
+  'static.ads-twitter.com','ads.twitter.com',
   'secure.adnxs.com','ib.adnxs.com','cdn.adnxs.com',
-  'rubiconproject.com','fastlane.rubiconproject.com',
-  'pubmatic.com','image6.pubmatic.com',
-  'openx.net','us-u.openx.net',
-  'criteo.com','criteo.net','static.criteo.net','sslwidget.criteo.com',
-  'casalemedia.com','contextweb.com','lijit.com','sovrn.com',
-  'indexexchange.com','bidswitch.com','appnexus.com',
-  'smartadserver.com','advertising.com','adtech.de',
-  'adsrvr.org','thetradedesk.com','rfihub.com','rlcdn.com',
-  'bluekai.com','turn.com','adroll.com','perfectaudience.com',
-  // Native / Recommendation Ads
-  'outbrain.com','widgets.outbrain.com','log.outbrain.com',
-  'taboola.com','cdn.taboola.com','trc.taboola.com',
-  'sharethrough.com','yieldmo.com','undertone.com',
-  // Measurement / Viewability
-  'moatads.com','doubleverify.com','adsafeprotected.com',
-  'flashtalking.com','mopub.com',
-  // Other ad networks
-  'media.net','ads.linkedin.com','snap.licdn.com',
-  'addthis.com','spotxchange.com','gravity.com',
-  'revcontent.com','mgid.com','zergnet.com',
-  'adcolony.com','inmobi.com','vungle.com','applovin.com',
-  'ad.doubleclick.net','cm.g.doubleclick.net','googleads.g.doubleclick.net'
+  'rubiconproject.com','pubmatic.com','openx.net','us-u.openx.net',
+  'criteo.com','criteo.net','static.criteo.net',
+  'casalemedia.com','contextweb.com','sovrn.com','indexexchange.com',
+  'smartadserver.com','advertising.com','adsrvr.org','thetradedesk.com',
+  'bluekai.com','adroll.com','outbrain.com','taboola.com',
+  'moatads.com','doubleverify.com','flashtalking.com',
+  'media.net','ads.linkedin.com','revcontent.com','mgid.com','zergnet.com',
+  'ad.doubleclick.net','cm.g.doubleclick.net','googleads.g.doubleclick.net',
+  'adtech.de','rfihub.com','rlcdn.com','appnexus.com','sharethrough.com'
 ];
 
-// Tracker domains (analytics, tracking pixels) — counted but NOT blocked
 const TRACKER_DOMAINS = [
   'google-analytics.com','analytics.google.com','googletagmanager.com',
   'analytics.twitter.com','bat.bing.com','mc.yandex.ru',
   'tr.snapchat.com','analytics.tiktok.com','pixel.quantserve.com',
-  'scorecardresearch.com','quantserve.com',
-  'hotjar.com','fullstory.com','mouseflow.com','clarity.ms',
-  'newrelic.com','mixpanel.com','amplitude.com','heapanalytics.com',
-  'segment.io','segment.com','intercom.io','intercomcdn.com',
-  'hubspot.com','marketo.com','pardot.com',
-  'logrocket.io','sentry.io','datadog-browser-agent.com',
-  'convertkit.com','mailchimp.com','klaviyo.com',
-  'branch.io','onesignal.com','pusher.com'
+  'scorecardresearch.com','quantserve.com','hotjar.com','fullstory.com',
+  'mouseflow.com','clarity.ms','newrelic.com','mixpanel.com',
+  'amplitude.com','heapanalytics.com','segment.io','segment.com',
+  'intercom.io','intercomcdn.com','hubspot.com','marketo.com','pardot.com',
+  'logrocket.io','sentry.io','convertkit.com','mailchimp.com','klaviyo.com',
+  'branch.io','onesignal.com'
 ];
 
-// Navigation redirect domains — click tracking links that route through ad servers
 const NAVIGATION_AD_DOMAINS = [
-  'outbrain.com','taboola.com','revcontent.com','mgid.com',
-  'zergnet.com','doubleclick.net','googleads.g.doubleclick.net',
-  'ad.atdmt.com','clkuk.tradedoubler.com','clkde.tradedoubler.com',
-  'tradedoubler.com','awin1.com','track.adform.net',
-  'servedby.flashtalking.com','ad.zanox.com','zanox.com',
-  'clickbooth.com','c2.com','ad.linksynergy.com',
-  'go.linksynergy.com','pjatr.com','pjtra.com',
-  'anrdoezrs.net','tkqlhce.com','dpbolvw.net','jdoqocy.com',
-  'target.com/r','click.linksynergy.com','bit.ly/ad','q.gs',
-  'adfarm1.adition.com','ad.adition.com','srv.clickfuse.com'
+  'outbrain.com','taboola.com','revcontent.com','mgid.com','zergnet.com',
+  'doubleclick.net','googleads.g.doubleclick.net','tradedoubler.com',
+  'awin1.com','track.adform.net','servedby.flashtalking.com',
+  'clickbooth.com','anrdoezrs.net','tkqlhce.com','dpbolvw.net','jdoqocy.com'
 ];
+
+const STRICT_TLDS = new Set(['xyz','tk','ml','ga','cf','gq','zip','mov','fit','bid','win',
+  'loan','click','download','review','stream','top','gdn','accountant','faith','date','racing','trade']);
 
 const CDN_WHITELIST = new Set([
   'fonts.googleapis.com','fonts.gstatic.com','ajax.googleapis.com',
   'cdnjs.cloudflare.com','cdn.jsdelivr.net','unpkg.com',
   'static.cloudflareinsights.com','i.ytimg.com','s.ytimg.com',
-  'yt3.ggpht.com','lh3.googleusercontent.com',
-  'ssl.gstatic.com','www.gstatic.com','maps.gstatic.com',
-  'ytimg.com','googlevideo.com','gvt1.com'
+  'ssl.gstatic.com','www.gstatic.com','ytimg.com','googlevideo.com','gvt1.com'
 ]);
 
-const AD_DOMAIN_SET     = new Set(AD_DOMAINS);
+const AD_DOMAIN_SET      = new Set(AD_DOMAINS);
 const TRACKER_DOMAIN_SET = new Set(TRACKER_DOMAINS);
 
-// ── State ─────────────────────────────────────────────────────────────────────
-const tabStats      = {};
-const userWhitelist = new Set();
-// trustedDomains: { [domain]: { ts, reason } } — persisted in chrome.storage.local
-let trustedDomains  = {};
-// per-tab static analysis cache { [tabId]: { staticScore, breakdown, headers } }
-const tabStaticCache = {};
-// per-tab behavioral signals { [tabId]: { apiCounts, networkInfo } }
+// ── Global State ──────────────────────────────────────────────────────────────
+const tabStats       = {};
 const tabBehavior    = {};
+const tabStaticCache = {};
+const userWhitelist  = new Set();
+let   trustedDomains = {};   // { domain: { ts, reason } }
+let   strictMode     = false;
+let   adsBlockedCount     = 0;
+let   trackersBlockedCount = 0;
+let   listenersReady = false;
 
-function log(msg, ...args) { console.log('[PRIVISEE-X BG]', msg, ...args); }
-function warn(msg, ...args) { console.warn('[PRIVISEE-X BG]', msg, ...args); }
+// In-memory blocked log (last 500, persisted to IDB lazily)
+const blockedLog = [];
 
+// Per-tab debounce timestamps
+const riskDebounce = {};
+
+function log(msg,  ...a) { console.log('[PRIVISEE-X BG]', msg, ...a); }
+function warn(msg, ...a) { console.warn('[PRIVISEE-X BG]', msg, ...a); }
+
+// ── Tab State Factories ───────────────────────────────────────────────────────
 function getTabStats(tabId) {
   if (!tabStats[tabId]) {
     tabStats[tabId] = {
       domain:'', trackerCount:0, adCount:0, blockedAds:0,
-      cookieCount:0, fingerprintCount:0, riskScore:0, riskLevel:'LOW',
+      cookieCount:0, fingerprintCount:0,
+      currentSessionRisk:0, historicalRisk:0, trustOverride:false,
+      riskScore:0, riskLevel:'LOW',
       staticScore:0, behavioralScore:0, reputationScore:0,
-      projection: null, dnaHash: null
+      projection:null, dnaHash:null
     };
   }
   return tabStats[tabId];
@@ -130,401 +101,431 @@ function getTabBehavior(tabId) {
   return tabBehavior[tabId];
 }
 
-// ── Static Intelligence Engine (inlined for SW compatibility) ─────────────────
-const SUSPICIOUS_TLDS = new Set(['xyz','tk','ml','ga','cf','gq','zip','mov','fit','bid','win',
-  'loan','click','download','review','stream','top','gdn','accountant','faith','date','racing','trade']);
-const KNOWN_TRACKER_ROOTS_STATIC = new Set(['doubleclick.net','google-analytics.com','googletagmanager.com',
-  'hotjar.com','fullstory.com','mouseflow.com','clarity.ms','mixpanel.com','amplitude.com',
-  'segment.com','segment.io','criteo.com','criteo.net','adroll.com','outbrain.com','taboola.com',
-  'scorecardresearch.com','quantserve.com','newrelic.com','sentry.io','heapanalytics.com','intercom.io']);
+function resetTab(tabId, url) {
+  tabStats[tabId]      = getTabStats(tabId); // ensure exists
+  const s = tabStats[tabId];
+  s.domain = ''; s.trackerCount=0; s.adCount=0; s.blockedAds=0;
+  s.cookieCount=0; s.fingerprintCount=0;
+  s.currentSessionRisk=0; s.historicalRisk=0; s.trustOverride=false;
+  s.riskScore=0; s.riskLevel='LOW';
+  s.staticScore=0; s.behavioralScore=0; s.reputationScore=0;
+  s.projection=null; s.dnaHash=null;
+  tabBehavior[tabId]   = null;
+  tabStaticCache[tabId] = null;
+  riskDebounce[tabId]  = 0;
+  if (url) { try { s.domain = clean(new URL(url).hostname); } catch {} }
+}
+
+// ── Domain Helpers ────────────────────────────────────────────────────────────
+function clean(d) { return (d||'').replace(/^www\./,'').toLowerCase(); }
+
+function isAd(domain) {
+  if (CDN_WHITELIST.has(domain)) return false;
+  if (AD_DOMAIN_SET.has(domain)) return true;
+  const root = domain.split('.').slice(-2).join('.');
+  return AD_DOMAIN_SET.has(root);
+}
+
+function isTracker(domain) {
+  if (CDN_WHITELIST.has(domain)) return false;
+  if (TRACKER_DOMAIN_SET.has(domain)) return true;
+  const root = domain.split('.').slice(-2).join('.');
+  return TRACKER_DOMAIN_SET.has(root);
+}
+
+function isStrictBlocked(domain) {
+  if (!strictMode) return false;
+  const tld = (domain.split('.').pop()||'').toLowerCase();
+  if (STRICT_TLDS.has(tld)) return true;
+  const name = domain.split('.').slice(-2,-1)[0] || '';
+  if (name.length < 4) return true;
+  return false;
+}
+
+// ── Static Score Engine ───────────────────────────────────────────────────────
+const SUSPICIOUS_TLDS = STRICT_TLDS;
+const KNOWN_TRACKER_ROOTS = new Set([
+  'doubleclick.net','google-analytics.com','googletagmanager.com',
+  'hotjar.com','fullstory.com','mouseflow.com','clarity.ms',
+  'mixpanel.com','amplitude.com','segment.com','segment.io',
+  'criteo.com','criteo.net','adroll.com','outbrain.com','taboola.com',
+  'scorecardresearch.com','quantserve.com','newrelic.com','sentry.io',
+  'heapanalytics.com','intercom.io'
+]);
 
 function computeStaticScore({ url='', domain='', headers={}, cookies=[] }) {
   let score = 0;
   const breakdown = [];
   const h = {};
-  for (const [k, v] of Object.entries(headers)) h[k.toLowerCase()] = v;
+  for (const [k,v] of Object.entries(headers)) h[k.toLowerCase()] = v;
   const isHTTPS = url.startsWith('https://');
-  if (!h['content-security-policy'])     { score += 10; breakdown.push({ factor:'Missing CSP',                  delta:10 }); }
-  if (!h['strict-transport-security'])   { score += 15; breakdown.push({ factor:'Missing HSTS',                 delta:15 }); }
-  if (!h['x-frame-options'])             { score +=  8; breakdown.push({ factor:'Missing X-Frame-Options',      delta:8  }); }
-  if (!h['referrer-policy'])             { score +=  5; breakdown.push({ factor:'Missing Referrer-Policy',      delta:5  }); }
-  if (!h['permissions-policy'])          { score +=  5; breakdown.push({ factor:'Missing Permissions-Policy',   delta:5  }); }
-  if (!h['x-content-type-options'] || h['x-content-type-options'].toLowerCase() !== 'nosniff')
-                                         { score +=  5; breakdown.push({ factor:'Missing X-Content-Type-Options', delta:5 }); }
-  if (!isHTTPS)                          { score += 30; breakdown.push({ factor:'Unencrypted HTTP',              delta:30 }); }
+  if (!h['content-security-policy'])   { score+=10; breakdown.push({ factor:'Missing CSP', delta:10 }); }
+  if (!h['strict-transport-security']) { score+=15; breakdown.push({ factor:'Missing HSTS', delta:15 }); }
+  if (!h['x-frame-options'])           { score+=8;  breakdown.push({ factor:'Missing X-Frame-Options', delta:8 }); }
+  if (!h['referrer-policy'])           { score+=5;  breakdown.push({ factor:'Missing Referrer-Policy', delta:5 }); }
+  if (!h['permissions-policy'])        { score+=5;  breakdown.push({ factor:'Missing Permissions-Policy', delta:5 }); }
+  if (!h['x-content-type-options'] || h['x-content-type-options'].toLowerCase()!=='nosniff')
+                                       { score+=5;  breakdown.push({ factor:'Missing X-Content-Type-Options', delta:5 }); }
+  if (!isHTTPS)                        { score+=30; breakdown.push({ factor:'Unencrypted HTTP', delta:30 }); }
   if (Array.isArray(cookies)) {
     let ins=0, ssn=0;
     for (const c of cookies) {
       if (!c.secure && isHTTPS) ins++;
-      const ss = (c.sameSite||'').toLowerCase();
+      const ss=(c.sameSite||'').toLowerCase();
       if ((ss==='no_restriction'||ss==='none') && !c.secure) ssn++;
     }
     if (ins>0) { const d=Math.min(20,ins*5); score+=d; breakdown.push({ factor:`${ins} cookie(s) missing Secure flag`, delta:d }); }
     if (ssn>0) { const d=Math.min(16,ssn*8); score+=d; breakdown.push({ factor:`${ssn} SameSite=None without Secure`, delta:d }); }
   }
   const tld = domain.split('.').pop().toLowerCase();
-  if (SUSPICIOUS_TLDS.has(tld)) { score += 20; breakdown.push({ factor:`Suspicious TLD (.${tld})`, delta:20 }); }
+  if (SUSPICIOUS_TLDS.has(tld)) { score+=20; breakdown.push({ factor:`Suspicious TLD (.${tld})`, delta:20 }); }
   const root = domain.split('.').slice(-2).join('.').toLowerCase();
-  if (KNOWN_TRACKER_ROOTS_STATIC.has(root)||KNOWN_TRACKER_ROOTS_STATIC.has(domain)) { score+=10; breakdown.push({ factor:'Known tracker domain', delta:10 }); }
+  if (KNOWN_TRACKER_ROOTS.has(root)||KNOWN_TRACKER_ROOTS.has(domain)) { score+=10; breakdown.push({ factor:'Known tracker domain', delta:10 }); }
   return { staticScore: Math.min(100, Math.max(0, Math.round(score))), breakdown };
 }
 
-// ── Behavioral DNA (inlined) ──────────────────────────────────────────────────
+// ── Behavioral DNA ────────────────────────────────────────────────────────────
 const DNA_CLUSTERS = [
   { name:'heavy_fingerprinter', centroid:{canvas:0.9,webgl:0.8,audio:0.7,fonts:0.8,webrtc:0.6,battery:0.5,localStorage:0.3,clipboard:0.1}, riskBoost:25 },
   { name:'tracker_analytics',   centroid:{canvas:0.3,webgl:0.1,audio:0.0,fonts:0.2,webrtc:0.0,battery:0.0,localStorage:0.7,clipboard:0.0}, riskBoost:15 },
   { name:'data_exfiltrator',    centroid:{canvas:0.4,webgl:0.2,audio:0.1,fonts:0.3,webrtc:0.3,battery:0.2,localStorage:0.8,clipboard:0.7}, riskBoost:30 },
-  { name:'clean_site',          centroid:{canvas:0.05,webgl:0,audio:0,fonts:0.05,webrtc:0,battery:0,localStorage:0.1,clipboard:0},           riskBoost:0  }
+  { name:'clean_site',          centroid:{canvas:0.05,webgl:0,audio:0,fonts:0.05,webrtc:0,battery:0,localStorage:0.1,clipboard:0}, riskBoost:0 }
 ];
-const DNA_VEC_KEYS = ['canvas','webgl','audio','fonts','webrtc','battery','localStorage','clipboard'];
-const DNA_MAX      = {canvas:20,webgl:10,audio:10,fonts:50,webrtc:5,battery:3,localStorage:30,clipboard:5};
-
-function dnaHash(api, domains=[]) {
-  const str = JSON.stringify({ api, cluster: dnaCluster(api), domains:[...domains].sort() });
-  let h = 0x811c9dc5;
-  for (let i=0; i<str.length; i++) { h ^= str.charCodeAt(i); h = (h*0x01000193)>>>0; }
-  return h.toString(16).padStart(8,'0');
-}
+const DNA_KEYS = ['canvas','webgl','audio','fonts','webrtc','battery','localStorage','clipboard'];
+const DNA_MAX  = {canvas:20,webgl:10,audio:10,fonts:50,webrtc:5,battery:3,localStorage:30,clipboard:5};
 
 function dnaCluster(api={}) {
-  const norm={}; for (const k of DNA_VEC_KEYS) norm[k]=Math.min(1,(api[k]||0)/(DNA_MAX[k]||1));
+  const norm={};
+  for (const k of DNA_KEYS) norm[k]=Math.min(1,(api[k]||0)/(DNA_MAX[k]||1));
   let best=null, bestSim=-1;
   for (const cl of DNA_CLUSTERS) {
     let dot=0,mA=0,mB=0;
-    for (const k of DNA_VEC_KEYS) { dot+=(norm[k]||0)*(cl.centroid[k]||0); mA+=(norm[k]||0)**2; mB+=(cl.centroid[k]||0)**2; }
-    const sim = (mA&&mB) ? dot/(Math.sqrt(mA)*Math.sqrt(mB)) : 0;
+    for (const k of DNA_KEYS) { dot+=(norm[k]||0)*(cl.centroid[k]||0); mA+=(norm[k]||0)**2; mB+=(cl.centroid[k]||0)**2; }
+    const sim=(mA&&mB)?dot/(Math.sqrt(mA)*Math.sqrt(mB)):0;
     if (sim>bestSim) { bestSim=sim; best=cl; }
   }
-  return { name:best?.name||'unknown', similarity:parseFloat(bestSim.toFixed(3)), riskBoost: bestSim>0.75&&best ? best.riskBoost : 0 };
+  return { name:best?.name||'unknown', similarity:parseFloat(bestSim.toFixed(3)), riskBoost:bestSim>0.75&&best?best.riskBoost:0 };
 }
 
-// ── Threat Projection (inlined) ───────────────────────────────────────────────
-function projectRisk(history=[], clusterBoost=0, currentScore=0) {
-  const scores = history.map(h=>h.score||0);
-  let proj = scores.length>=2 ? scores.reduce((e,s,i)=>i===0?s:0.3*s+0.7*e,0) : currentScore;
+function dnaHash(api, domains=[]) {
+  const str=JSON.stringify({ api, cluster:dnaCluster(api), domains:[...domains].sort() });
+  let h=0x811c9dc5;
+  for (let i=0;i<str.length;i++) { h^=str.charCodeAt(i); h=(h*0x01000193)>>>0; }
+  return h.toString(16).padStart(8,'0');
+}
+
+function projectRisk(history=[], clusterBoost=0, current=0) {
+  const scores=history.map(h=>h.score||0);
+  let proj=scores.length>=2?scores.reduce((e,s,i)=>i===0?s:0.3*s+0.7*e,0):current;
   const mid=Math.floor(scores.length/2);
   if (scores.length>=4) {
     const a1=scores.slice(0,mid).reduce((a,b)=>a+b,0)/mid;
     const a2=scores.slice(mid).reduce((a,b)=>a+b,0)/(scores.length-mid);
     const delta=a2-a1; if (delta>5) proj+=delta*0.7; else if (delta<-5) proj*=0.9;
   }
-  proj += clusterBoost*0.5;
+  proj+=clusterBoost*0.5;
   return Math.round(Math.min(100,Math.max(0,proj)));
 }
 
-// ── Multi-Layer Risk Score ────────────────────────────────────────────────────
-// Weights: 40% Behavioral | 30% Static | 20% Reputation | 10% UserHistory
-// NOTE: Intentionally inlined — see comment above calcRisk original.
+// ── Multi-Layer Risk Calculation ──────────────────────────────────────────────
 async function calcRisk(tabId, domain) {
   const s  = getTabStats(tabId);
   const bh = getTabBehavior(tabId);
 
-  // Behavioral score (trackers + fingerprinting + 3rd-party cookies)
+  // Behavioral score — always computed
   let behavioral = 0;
-  if (s.trackerCount>0)    behavioral += Math.min(40, Math.log2(s.trackerCount+1)*13);
-  behavioral += Math.min(30, s.fingerprintCount*10);
-  behavioral += Math.min(20, (s.cookieCount>5 ? (s.cookieCount-5)*2 : 0));
-  behavioral = Math.min(100, Math.round(behavioral));
+  if ((s.trackerCount||0)>0) behavioral+=Math.min(40,Math.log2(s.trackerCount+1)*13);
+  behavioral+=Math.min(30,(s.fingerprintCount||0)*10);
+  behavioral+=Math.min(20,((s.cookieCount||0)>5?((s.cookieCount||0)-5)*2:0));
+  behavioral=Math.min(100,Math.round(behavioral));
 
-  // DNA cluster match for reputation boost
-  const cluster     = dnaCluster(bh.apiCounts);
-  const reputBoost  = cluster.riskBoost;
+  const cluster    = dnaCluster(bh.apiCounts);
+  const reputBoost = cluster.riskBoost;
 
-  // Static score from cached headers
+  // Static score — always computed (use cached or 0 if not yet received)
   const staticScore = tabStaticCache[tabId]?.staticScore ?? 0;
 
-  // Reputation score (tracker blocklist density + DNA cluster)
-  const reputation = Math.min(100, Math.round(
-    (s.trackerCount>0 ? Math.min(50, s.trackerCount*5) : 0) + reputBoost
+  const reputation = Math.min(100,Math.round(
+    ((s.trackerCount||0)>0?Math.min(50,(s.trackerCount||0)*5):0)+reputBoost
   ));
 
-  // User history score — how consistently risky this domain has been
-  let userHistory = 0;
+  // Historical risk for this domain
+  let userHistory=0;
   try {
-    const hist = await storageManager.getRiskHistorySince(Date.now() - 30*86400000);
-    const domainHist = (hist||[]).filter(h=>h.domain===domain).slice(-10);
-    if (domainHist.length) {
-      userHistory = Math.round(domainHist.reduce((a,h)=>a+h.score,0)/domainHist.length);
-    }
+    const hist=await storageManager.getRiskHistorySince(Date.now()-30*86400000);
+    const dh=(hist||[]).filter(h=>h.domain===domain).slice(-10);
+    if (dh.length) userHistory=Math.round(dh.reduce((a,h)=>a+h.score,0)/dh.length);
   } catch {}
 
-  // Weighted final score
-  const final = Math.round(Math.min(100, Math.max(0,
-    0.40*behavioral + 0.30*staticScore + 0.20*reputation + 0.10*userHistory
+  const final=Math.round(Math.min(100,Math.max(0,
+    0.40*behavioral+0.30*staticScore+0.20*reputation+0.10*userHistory
   )));
+  const level=final>=75?'CRITICAL':final>=50?'HIGH':final>=20?'MODERATE':'LOW';
 
-  const level = final>=75?'CRITICAL':final>=50?'HIGH':final>=20?'MODERATE':'LOW';
-
-  // Store breakdown in tab stats
-  s.behavioralScore = behavioral;
-  s.staticScore     = staticScore;
-  s.reputationScore = reputation;
-  s.riskScore       = final;
-  s.riskLevel       = level;
+  // Store scores (always — trust only affects display)
+  s.behavioralScore    = behavioral;
+  s.staticScore        = staticScore;
+  s.reputationScore    = reputation;
+  s.currentSessionRisk = final;
+  s.historicalRisk     = userHistory;
+  s.riskScore          = final;
+  s.riskLevel          = level;
 
   return { score:final, level, behavioral, staticScore, reputation, userHistory };
 }
 
-// ── Domain helpers ────────────────────────────────────────────────────────────
-function isAd(domain) {
-  if (AD_DOMAIN_SET.has(domain)) return true;
-  const parts = domain.split('.');
-  return parts.length >= 2 && AD_DOMAIN_SET.has(parts.slice(-2).join('.'));
-}
-function isTracker(domain) {
-  if (TRACKER_DOMAIN_SET.has(domain)) return true;
-  const parts = domain.split('.');
-  return parts.length >= 2 && TRACKER_DOMAIN_SET.has(parts.slice(-2).join('.'));
-}
-function clean(domain) { return (domain||'').replace(/^www\./, '').toLowerCase(); }
-
-// ── declarativeNetRequest — block all known ad domains ────────────────────────
-async function setupAdBlocking() {
-  try {
-    // Remove existing rules
-    const existing = await chrome.declarativeNetRequest.getDynamicRules();
-    if (existing.length) {
-      await chrome.declarativeNetRequest.updateDynamicRules({
-        removeRuleIds: existing.map(r => r.id)
-      });
-    }
-
-    // All resource types for thorough blocking
-    const allTypes = [
-      'script','xmlhttprequest','image','media','sub_frame',
-      'stylesheet','font','ping','websocket','other',
-      'main_frame'   // ← catches navigation-level ad redirects
-    ];
-
-    const rules = [];
-    let id = 1;
-
-    // Block ad domains completely
-    for (const domain of AD_DOMAINS) {
-      rules.push({
-        id: id++,
-        priority: 2,
-        action: { type: 'block' },
-        condition: {
-          urlFilter: `||${domain}^`,
-          resourceTypes: allTypes
-        }
-      });
-    }
-
-    // Block navigation redirect ad click trackers
-    for (const domain of NAVIGATION_AD_DOMAINS) {
-      if (!AD_DOMAIN_SET.has(domain)) {
-        rules.push({
-          id: id++,
-          priority: 1,
-          action: { type: 'block' },
-          condition: {
-            urlFilter: `||${domain}^`,
-            resourceTypes: ['main_frame', 'sub_frame', 'ping', 'xmlhttprequest']
-          }
-        });
-      }
-    }
-
-    // Limit to 5000 max (Chrome limit)
-    const finalRules = rules.slice(0, 5000);
-    await chrome.declarativeNetRequest.updateDynamicRules({ addRules: finalRules });
-    log(`Ad blocking active: ${finalRules.length} rules`);
-  } catch (e) {
-    warn('Ad blocking setup failed (non-fatal):', e.message);
-  }
-}
-
-// ── Site stats persistence ────────────────────────────────────────────────────
-async function updateSiteStats(domain, delta) {
-  if (!domain || domain.startsWith('chrome') || domain === '__whitelist__') return;
-  try {
-    const curr = await storageManager.get('sites', domain) || {
-      domain, trackerCount:0, adCount:0, blockedAds:0, cookieCount:0,
-      fingerprintCount:0, riskScore:0, riskLevel:'LOW',
-      firstSeen:Date.now(), lastVisit:0
-    };
-    if (delta.trackerCount)     curr.trackerCount     = (curr.trackerCount||0) + delta.trackerCount;
-    if (delta.adCount)          curr.adCount          = (curr.adCount||0)      + delta.adCount;
-    if (delta.blockedAds)       curr.blockedAds       = (curr.blockedAds||0)   + delta.blockedAds;
-    if (delta.cookieCount)      curr.cookieCount      = (curr.cookieCount||0)  + delta.cookieCount;
-    if (delta.fingerprintCount) curr.fingerprintCount = (curr.fingerprintCount||0) + delta.fingerprintCount;
-    if (delta.riskScore !== undefined) curr.riskScore = delta.riskScore;
-    if (delta.riskLevel !== undefined) curr.riskLevel = delta.riskLevel;
-    curr.lastVisit = Date.now();
-    await storageManager.put('sites', curr);
-  } catch (e) { warn('updateSiteStats:', e.message); }
-}
-
-async function addTrackerEntry(siteDomain, trackerDomain) {
-  if (!siteDomain || !trackerDomain) return;
-  try {
-    const key  = `${siteDomain}::${trackerDomain}`;
-    const curr = await storageManager.get('trackers', key) || {
-      id: key, siteDomain, trackerDomain, count: 0, firstSeen: Date.now()
-    };
-    curr.count++;
-    curr.lastSeen = Date.now();
-    await storageManager.put('trackers', curr);
-  } catch {}
-}
-
+// ── Debounced Risk Update ─────────────────────────────────────────────────────
 async function updateRisk(tabId) {
-  const s = getTabStats(tabId);
+  const now=Date.now();
+  if (now-(riskDebounce[tabId]||0)<800) return;
+  riskDebounce[tabId]=now;
+
+  const s=getTabStats(tabId);
   if (!s.domain) return;
-  // Trust override — skip all calculations
-  if (trustedDomains[s.domain]) {
-    s.riskScore = 0; s.riskLevel = 'LOW';
-    return;
-  }
-  const r = await calcRisk(tabId, s.domain);
+
+  const r=await calcRisk(tabId,s.domain);
   try {
-    await updateSiteStats(s.domain, { riskScore: r.score, riskLevel: r.level });
+    await updateSiteStats(s.domain,{ riskScore:r.score, riskLevel:r.level });
     await storageManager.addRiskHistory({
-      domain: s.domain, score: r.score, level: r.level,
-      trackers: s.trackerCount, cookies: s.cookieCount,
-      staticScore: r.staticScore, behavioralScore: r.behavioral,
-      timestamp: Date.now()
+      domain:s.domain, score:r.score, level:r.level,
+      staticScore:r.staticScore, behavioralScore:r.behavioral,
+      trackers:s.trackerCount, cookies:s.cookieCount,
+      timestamp:Date.now()
     });
   } catch {}
 }
 
-// ── webRequest listener — count what DNR blocks and what we detect ─────────────
+// ── Site Stats Persistence ────────────────────────────────────────────────────
+async function updateSiteStats(domain, delta) {
+  if (!domain||domain.startsWith('chrome')||domain==='__whitelist__') return;
+  try {
+    const curr=await storageManager.get('sites',domain)||{
+      domain, trackerCount:0, adCount:0, blockedAds:0, cookieCount:0,
+      fingerprintCount:0, riskScore:0, riskLevel:'LOW',
+      firstSeen:Date.now(), lastVisit:0
+    };
+    if (delta.trackerCount!=null)     curr.trackerCount    =(curr.trackerCount||0)+delta.trackerCount;
+    if (delta.adCount!=null)          curr.adCount         =(curr.adCount||0)+delta.adCount;
+    if (delta.blockedAds!=null)       curr.blockedAds      =(curr.blockedAds||0)+delta.blockedAds;
+    if (delta.cookieCount!=null)      curr.cookieCount     =(curr.cookieCount||0)+delta.cookieCount;
+    if (delta.fingerprintCount!=null) curr.fingerprintCount=(curr.fingerprintCount||0)+delta.fingerprintCount;
+    if (delta.riskScore!==undefined)  curr.riskScore       =delta.riskScore;
+    if (delta.riskLevel!==undefined)  curr.riskLevel       =delta.riskLevel;
+    curr.lastVisit=Date.now();
+    await storageManager.put('sites',curr);
+  } catch(e) { warn('updateSiteStats:',e.message); }
+}
+
+async function addTrackerEntry(siteDomain, trackerDomain) {
+  if (!siteDomain||!trackerDomain) return;
+  try {
+    const key=`${siteDomain}::${trackerDomain}`;
+    const curr=await storageManager.get('trackers',key)||{ id:key, siteDomain, trackerDomain, count:0, firstSeen:Date.now() };
+    curr.count++;
+    curr.lastSeen=Date.now();
+    await storageManager.put('trackers',curr);
+  } catch {}
+}
+
+// ── Blocked Request Logging ───────────────────────────────────────────────────
+async function logBlockedRequest(domain, fullURL, type) {
+  const entry={ domain, fullURL, type, timestamp:Date.now() };
+  blockedLog.unshift(entry);
+  if (blockedLog.length>500) blockedLog.length=500;
+  // Persist async
+  try { await storageManager.addBlockedRequest(entry); } catch {}
+
+  // Update counters
+  if (type==='ad')      { adsBlockedCount++;      await persistCounters(); }
+  if (type==='tracker') { trackersBlockedCount++;  await persistCounters(); }
+}
+
+async function persistCounters() {
+  try { await chrome.storage.local.set({ adsBlockedCount, trackersBlockedCount }); } catch {}
+}
+
+// ── declarativeNetRequest Ad Blocking Setup ───────────────────────────────────
+async function setupAdBlocking() {
+  try {
+    const existing=await chrome.declarativeNetRequest.getDynamicRules();
+    if (existing.length) {
+      await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds:existing.map(r=>r.id) });
+    }
+    const allTypes=['script','xmlhttprequest','image','media','sub_frame',
+                    'stylesheet','font','ping','websocket','other','main_frame'];
+    const rules=[];
+    let id=1;
+    for (const d of AD_DOMAINS) {
+      rules.push({ id:id++, priority:2, action:{type:'block'},
+        condition:{ urlFilter:`||${d}^`, resourceTypes:allTypes } });
+    }
+    for (const d of NAVIGATION_AD_DOMAINS) {
+      if (!AD_DOMAIN_SET.has(d)) {
+        rules.push({ id:id++, priority:1, action:{type:'block'},
+          condition:{ urlFilter:`||${d}^`, resourceTypes:['main_frame','sub_frame','ping','xmlhttprequest'] } });
+      }
+    }
+    await chrome.declarativeNetRequest.updateDynamicRules({ addRules:rules.slice(0,5000) });
+    log(`Ad blocking active: ${rules.length} rules`);
+  } catch(e) { warn('Ad blocking setup failed:',e.message); }
+}
+
+// ── Cookie + LocalStorage Deletion ───────────────────────────────────────────
+async function deleteCookieAndStorage(name, url, domain) {
+  try { await chrome.cookies.remove({ name, url }); } catch {}
+  try {
+    const tabs=await chrome.tabs.query({});
+    for (const tab of tabs.filter(t=>{ try{return clean(new URL(t.url).hostname).includes(clean(domain));}catch{return false;} })) {
+      try {
+        await chrome.scripting.executeScript({ target:{tabId:tab.id},
+          func:(n)=>{ try{ Object.keys(localStorage).filter(k=>k===n||k.toLowerCase().includes(n.toLowerCase())).forEach(k=>localStorage.removeItem(k));}catch{} },
+          args:[name] });
+      } catch {}
+    }
+  } catch {}
+}
+
+// ── Listeners ─────────────────────────────────────────────────────────────────
 function setupListeners() {
-  // Count tracker/ad hits (DNR handles the actual blocking)
+  if (listenersReady) return;
+  listenersReady=true;
+
+  // Count/log tracker & ad hits (DNR handles actual blocking)
   chrome.webRequest.onBeforeRequest.addListener(
     async (details) => {
       if (!details.url?.startsWith('http')) return;
-      if (details.type === 'main_frame') return;
-
+      if (details.type==='main_frame') return;
       let reqDomain, srcDomain;
       try {
-        reqDomain = clean(new URL(details.url).hostname);
-        srcDomain = details.initiator ? clean(new URL(details.initiator).hostname) : '';
+        reqDomain=clean(new URL(details.url).hostname);
+        srcDomain=details.initiator?clean(new URL(details.initiator).hostname):'';
       } catch { return; }
+      if (!reqDomain||reqDomain===srcDomain) return;
+      if (CDN_WHITELIST.has(reqDomain)||userWhitelist.has(reqDomain)) return;
 
-      if (!reqDomain || reqDomain === srcDomain) return;
-      if (CDN_WHITELIST.has(reqDomain) || userWhitelist.has(reqDomain)) return;
+      const tab=getTabStats(details.tabId);
+      const bh=getTabBehavior(details.tabId);
+      const site=srcDomain||reqDomain;
+      if (site) tab.domain=site;
 
-      const tab  = getTabStats(details.tabId);
-      const bh   = getTabBehavior(details.tabId);
-      const site = srcDomain || reqDomain;
-      if (site) tab.domain = site;
-
-      // Track third-party domains for DNA
-      if (!bh.networkInfo.thirdPartyDomains.includes(reqDomain)) {
+      if (!bh.networkInfo.thirdPartyDomains.includes(reqDomain))
         bh.networkInfo.thirdPartyDomains.push(reqDomain);
-      }
-      if (details.type === 'xmlhttprequest') bh.networkInfo.xhrCount++;
+      if (details.type==='xmlhttprequest') bh.networkInfo.xhrCount++;
 
-      if (isAd(reqDomain)) {
-        tab.adCount++; tab.blockedAds++; tab.trackerCount++;
-        await updateSiteStats(site, { trackerCount:1, adCount:1, blockedAds:1 });
-        await addTrackerEntry(site, reqDomain);
+      if (isAd(reqDomain)||isStrictBlocked(reqDomain)) {
+        tab.adCount++; tab.blockedAds++;
+        await updateSiteStats(site,{trackerCount:1,adCount:1,blockedAds:1});
+        await addTrackerEntry(site,reqDomain);
+        await logBlockedRequest(reqDomain,details.url,'ad');
+        tab.trackerCount++;
       } else if (isTracker(reqDomain)) {
         tab.trackerCount++;
-        await updateSiteStats(site, { trackerCount:1 });
-        await addTrackerEntry(site, reqDomain);
+        await updateSiteStats(site,{trackerCount:1});
+        await addTrackerEntry(site,reqDomain);
+        await logBlockedRequest(reqDomain,details.url,'tracker');
       } else { return; }
       await updateRisk(details.tabId);
     },
-    { urls: ['<all_urls>'] }
+    { urls:['<all_urls>'] }
   );
 
-  // ── Static score via response headers ─────────────────────────────────────
+  // Static score via response headers (always run)
   chrome.webRequest.onHeadersReceived.addListener(
     async (details) => {
-      if (details.type !== 'main_frame') return;
-      let domain, url = details.url;
-      try { domain = clean(new URL(url).hostname); } catch { return; }
-      if (!domain || CDN_WHITELIST.has(domain)) return;
-
-      // Convert header array to object
-      const headers = {};
-      for (const h of (details.responseHeaders || [])) headers[h.name.toLowerCase()] = h.value;
-
-      // Get cookies for this domain
-      let cookies = [];
-      try { cookies = await chrome.cookies.getAll({ domain }); } catch {}
-
-      const result = computeStaticScore({ url, domain, headers, cookies });
-      tabStaticCache[details.tabId] = { ...result, url, domain, rawHeaders: headers };
+      if (details.type!=='main_frame') return;
+      let domain;
+      try { domain=clean(new URL(details.url).hostname); } catch { return; }
+      if (!domain||CDN_WHITELIST.has(domain)) return;
+      const headers={};
+      for (const h of (details.responseHeaders||[])) headers[h.name.toLowerCase()]=h.value;
+      let cookies=[];
+      try { cookies=await chrome.cookies.getAll({domain}); } catch {}
+      const result=computeStaticScore({ url:details.url, domain, headers, cookies });
+      tabStaticCache[details.tabId]={ ...result, url:details.url, domain, rawHeaders:headers };
       log(`Static score for ${domain}: ${result.staticScore}`);
+      // Trigger risk update after static analysis
+      const s=getTabStats(details.tabId);
+      if (!s.domain) s.domain=domain;
+      await updateRisk(details.tabId);
     },
-    { urls: ['<all_urls>'] },
+    { urls:['<all_urls>'] },
     ['responseHeaders']
   );
 
-  // ── Navigation-level ad redirect catching ─────────────────────────────────
+  // Navigation redirect detection
   chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
-    if (details.frameId !== 0) return;
+    if (details.frameId!==0) return;
     let domain;
-    try { domain = clean(new URL(details.url).hostname); } catch { return; }
-    if (!domain || CDN_WHITELIST.has(domain) || userWhitelist.has(domain)) return;
-
-    if (isAd(domain) || NAVIGATION_AD_DOMAINS.some(d => domain === d || domain.endsWith('.' + d))) {
-      const tab = getTabStats(details.tabId);
+    try { domain=clean(new URL(details.url).hostname); } catch { return; }
+    if (!domain||CDN_WHITELIST.has(domain)||userWhitelist.has(domain)) return;
+    if (isAd(domain)||isStrictBlocked(domain)||
+        NAVIGATION_AD_DOMAINS.some(d=>domain===d||domain.endsWith('.'+d))) {
+      const tab=getTabStats(details.tabId);
       tab.adCount++; tab.blockedAds++;
-      const src = tab.domain || domain;
-      await updateSiteStats(src, { adCount:1, blockedAds:1, trackerCount:1 });
+      const src=tab.domain||domain;
+      await updateSiteStats(src,{adCount:1,blockedAds:1,trackerCount:1});
+      await logBlockedRequest(domain,details.url,'redirect');
     }
   });
 
-  // ── Tab lifecycle ──────────────────────────────────────────────────────────
+  // Tab loading — reset per-tab state
   chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.status === 'loading' && tab.url && !tab.url.startsWith('chrome://')) {
-      tabStats[tabId]      = { domain:'', trackerCount:0, adCount:0, blockedAds:0, cookieCount:0,
-                               fingerprintCount:0, riskScore:0, riskLevel:'LOW', staticScore:0,
-                               behavioralScore:0, reputationScore:0, projection:null, dnaHash:null };
-      tabBehavior[tabId]   = { apiCounts:{canvas:0,webgl:0,audio:0,fonts:0,webrtc:0,battery:0,localStorage:0,clipboard:0},
-                               networkInfo:{fetchCount:0,xhrCount:0,wsCount:0,thirdPartyDomains:[]} };
-      tabStaticCache[tabId] = null;
-      try { tabStats[tabId].domain = clean(new URL(tab.url).hostname); } catch {}
+    if (changeInfo.status==='loading'&&tab.url&&!tab.url.startsWith('chrome://')) {
+      resetTab(tabId,tab.url);
     }
   });
 
-  // ── Generate DNA hash + projection when tab finishes loading ─────────────
+  // Tab complete — compute DNA, projection, and force static+risk update
   chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-    if (changeInfo.status !== 'complete') return;
-    if (!tab.url || tab.url.startsWith('chrome://')) return;
+    if (changeInfo.status!=='complete') return;
+    if (!tab.url||tab.url.startsWith('chrome://')) return;
     let domain;
-    try { domain = clean(new URL(tab.url).hostname); } catch { return; }
+    try { domain=clean(new URL(tab.url).hostname); } catch { return; }
     if (!domain) return;
 
-    const bh = getTabBehavior(tabId);
-    const s  = getTabStats(tabId);
-    const cluster    = dnaCluster(bh.apiCounts);
-    const hash       = dnaHash(bh.apiCounts, bh.networkInfo.thirdPartyDomains);
-    s.dnaHash        = hash;
+    const s=getTabStats(tabId);
+    const bh=getTabBehavior(tabId);
+    s.domain=domain;
 
-    // Store DNA fingerprint
+    // If static cache is still null (no headers received), compute minimum static score
+    if (!tabStaticCache[tabId]) {
+      const isHTTPS=tab.url.startsWith('https://');
+      const minScore=computeStaticScore({ url:tab.url, domain, headers:{}, cookies:[] });
+      tabStaticCache[tabId]={ ...minScore, url:tab.url, domain, rawHeaders:{} };
+    }
+
+    // Always update risk on page complete
+    await updateRisk(tabId);
+
+    // DNA fingerprint
+    const cluster=dnaCluster(bh.apiCounts);
+    const hash=dnaHash(bh.apiCounts,bh.networkInfo.thirdPartyDomains);
+    s.dnaHash=hash;
     try {
-      const fp = { key:`dna::${domain}`, domain, hash, signature:{ apiUsage:bh.apiCounts, network:bh.networkInfo, cluster }, ts:Date.now() };
-      await storageManager.put('models', fp);
+      await storageManager.put('models',{
+        key:`dna::${domain}`, domain, hash,
+        signature:{ apiUsage:bh.apiCounts, network:bh.networkInfo, cluster }, ts:Date.now()
+      });
     } catch {}
 
-    // Compute projection
+    // Threat projection
     try {
-      const hist = await storageManager.getRiskHistorySince(Date.now()-30*86400000);
-      const domHist = (hist||[]).filter(h=>h.domain===domain);
-      const projected = projectRisk(domHist, cluster.riskBoost, s.riskScore);
-      const trend = domHist.length>=4 ? (() => {
-        const mid=Math.floor(domHist.length/2);
+      const hist=await storageManager.getRiskHistorySince(Date.now()-30*86400000);
+      const domHist=(hist||[]).filter(h=>h.domain===domain);
+      const projected=projectRisk(domHist,cluster.riskBoost,s.riskScore);
+      const mid=Math.floor(domHist.length/2);
+      const trend=domHist.length>=4?(()=>{
         const a1=domHist.slice(0,mid).reduce((a,h)=>a+h.score,0)/mid;
         const a2=domHist.slice(mid).reduce((a,h)=>a+h.score,0)/(domHist.length-mid);
         return a2-a1>5?'INCREASING':a2-a1<-5?'DECREASING':'STABLE';
-      })() : 'STABLE';
-      s.projection = {
-        projectedRiskIn30Days: projected,
-        confidence: domHist.length>=5?'HIGH':domHist.length>=2?'MEDIUM':'LOW',
-        trend,
-        clusterName: cluster.name,
-        clusterSimilarity: cluster.similarity,
-        message: `Risk projected to ~${projected}/100 in 30 days (${domHist.length>=2?'MEDIUM':'LOW'} confidence)`
+      })():'STABLE';
+      s.projection={
+        projectedRiskIn30Days:projected,
+        confidence:domHist.length>=5?'HIGH':domHist.length>=2?'MEDIUM':'LOW',
+        trend, clusterName:cluster.name, clusterSimilarity:cluster.similarity,
+        message:`Risk projected to ~${projected}/100 in 30 days`
       };
-      // Persist projection
-      await storageManager.put('models', { key:`proj::${domain}`, domain, ...s.projection, ts:Date.now() });
+      await storageManager.put('models',{ key:`proj::${domain}`, domain, ...s.projection, ts:Date.now() });
     } catch {}
   });
 
@@ -532,406 +533,335 @@ function setupListeners() {
     delete tabStats[tabId];
     delete tabBehavior[tabId];
     delete tabStaticCache[tabId];
+    delete riskDebounce[tabId];
   });
 }
 
-// ── Cookie + localStorage helper ───────────────────────────────────────────────
-async function deleteCookieAndStorage(name, url, domain) {
-  // 1. Delete the actual cookie
-  try { await chrome.cookies.remove({ name, url }); } catch {}
-
-  // 2. Find tabs with this domain and clear localStorage key
-  try {
-    const allTabs = await chrome.tabs.query({});
-    const targets = allTabs.filter(t => {
-      try { return clean(new URL(t.url).hostname).includes(clean(domain)); } catch { return false; }
-    });
-    for (const tab of targets) {
-      try {
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: (cookieName) => {
-            try {
-              // Remove matching localStorage keys
-              const keys = Object.keys(localStorage);
-              keys.forEach(k => {
-                if (k === cookieName || k.toLowerCase().includes(cookieName.toLowerCase())) {
-                  localStorage.removeItem(k);
-                }
-              });
-            } catch {}
-          },
-          args: [name]
-        });
-      } catch {} // Tab might be protected (chrome://)
-    }
-  } catch {}
-}
-
-// ── Message Router ─────────────────────────────────────────────────────────────
+// ── Message Router ────────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     try {
-      const action = message.action || message.type || '';
-      log('←', action);
+      const action=message.action||message.type||'';
+      log('←',action);
 
-      // ── GET_TAB_STATS ──────────────────────────────────────────────────────
-      if (action === 'GET_TAB_STATS') {
-        const [tab] = await chrome.tabs.query({ active:true, currentWindow:true });
-        if (!tab || tab.url?.startsWith('chrome://')) {
-          sendResponse({ riskScore:0, riskLevel:'N/A', trackerCount:0, cookieCount:0, adCount:0, blockedAds:0 });
-          return;
+      if (action==='GET_TAB_STATS') {
+        const [tab]=await chrome.tabs.query({ active:true, currentWindow:true });
+        if (!tab||tab.url?.startsWith('chrome://')) {
+          sendResponse({ riskScore:0, riskLevel:'N/A', trackerCount:0, cookieCount:0, adCount:0, blockedAds:0,
+            adsBlockedCount, trackersBlockedCount }); return;
         }
-        const stats  = getTabStats(tab.id);
-        let domain   = stats.domain;
-        if (!domain && tab.url) { try { domain = clean(new URL(tab.url).hostname); } catch {} }
-        let cookieCount = stats.cookieCount;
-        if (domain) {
-          try { cookieCount = (await chrome.cookies.getAll({ domain }))?.length || 0; } catch {}
-          stats.cookieCount = cookieCount;
-        }
-        const trusted   = !!(domain && trustedDomains[domain]);
-        const sc        = tabStaticCache[tab.id] || {};
-        const staticBreakdown = sc.breakdown || [];
+        const stats=getTabStats(tab.id);
+        let domain=stats.domain;
+        if (!domain&&tab.url) { try{ domain=clean(new URL(tab.url).hostname); }catch{} }
+        let cookieCount=stats.cookieCount;
+        if (domain) { try{ cookieCount=(await chrome.cookies.getAll({domain}))?.length||0; }catch{} stats.cookieCount=cookieCount; }
+        const trusted=!!(domain&&trustedDomains[domain]);
+        stats.trustOverride=trusted;
+        const sc=tabStaticCache[tab.id]||{};
         sendResponse({
           domain,
-          riskScore:        trusted ? 0 : stats.riskScore,
-          riskLevel:        trusted ? 'LOW' : stats.riskLevel,
-          trusted,
-          trackerCount:     stats.trackerCount,
+          riskScore:        trusted?0:stats.riskScore,
+          riskLevel:        trusted?'LOW':stats.riskLevel,
+          currentSessionRisk:stats.currentSessionRisk,
+          historicalRisk:    stats.historicalRisk,
+          trusted, trustOverride:trusted,
+          trackerCount:    stats.trackerCount,
           cookieCount,
-          adCount:          stats.adCount,
-          blockedAds:       stats.blockedAds,
-          fingerprintCount: stats.fingerprintCount,
-          staticScore:      stats.staticScore,
-          behavioralScore:  stats.behavioralScore,
-          reputationScore:  stats.reputationScore,
-          staticBreakdown,
-          dnaHash:          stats.dnaHash,
-          projection:       stats.projection
+          adCount:         stats.adCount,
+          blockedAds:      stats.blockedAds,
+          fingerprintCount:stats.fingerprintCount,
+          staticScore:     stats.staticScore,
+          behavioralScore: stats.behavioralScore,
+          reputationScore: stats.reputationScore,
+          staticBreakdown: sc.breakdown||[],
+          rawHeaders:      sc.rawHeaders||{},
+          dnaHash:         stats.dnaHash,
+          projection:      stats.projection,
+          adsBlockedCount, trackersBlockedCount,
+          strictMode
         });
       }
 
-      // ── GET_DASHBOARD_DATA ─────────────────────────────────────────────────
-      else if (action === 'GET_DASHBOARD_DATA') {
-        let sites = [];
-        try { sites = await storageManager.getAll('sites', 500); } catch {}
-        sites = (sites||[]).filter(s => s.domain && s.domain !== '__whitelist__');
-        sendResponse({ sites, success: true });
+      else if (action==='GET_DASHBOARD_DATA') {
+        let sites=[];
+        try { sites=await storageManager.getAll('sites',500); } catch {}
+        sites=(sites||[]).filter(s=>s.domain&&s.domain!=='__whitelist__');
+        sendResponse({ sites, success:true, adsBlockedCount, trackersBlockedCount });
       }
 
-      // ── GET_TRACKERS_FOR_SITE ──────────────────────────────────────────────
-      else if (action === 'GET_TRACKERS_FOR_SITE') {
-        let entries = [];
+      else if (action==='GET_TRACKERS_FOR_SITE') {
+        let entries=[];
         try {
-          entries = await storageManager.getAll('trackers', 2000);
-          if (message.siteDomain) {
-            entries = entries.filter(e => e.siteDomain === message.siteDomain);
-          }
+          entries=await storageManager.getAll('trackers',2000);
+          if (message.siteDomain) entries=entries.filter(e=>e.siteDomain===message.siteDomain);
         } catch {}
-        sendResponse({ trackers: entries || [], success: true });
+        sendResponse({ trackers:entries||[], success:true });
       }
 
-      // ── DELETE_TRACKER ─────────────────────────────────────────────────────
-      else if (action === 'DELETE_TRACKER') {
-        try {
-          await storageManager.delete('trackers', message.id);
-          sendResponse({ success: true });
-        } catch (e) { sendResponse({ success: false, error: e.message }); }
+      else if (action==='DELETE_TRACKER') {
+        try { await storageManager.delete('trackers',message.id); sendResponse({success:true}); }
+        catch(e) { sendResponse({success:false,error:e.message}); }
       }
 
-      // ── GET_ALL_COOKIES ────────────────────────────────────────────────────
-      else if (action === 'GET_ALL_COOKIES') {
-        let raw = [];
-        try {
-          raw = message.domain
-            ? await chrome.cookies.getAll({ domain: message.domain })
-            : await chrome.cookies.getAll({});
-        } catch {}
-        const now = Date.now() / 1000;
-        const cookies = (raw||[]).map(c => ({
+      else if (action==='GET_ALL_COOKIES') {
+        let raw=[];
+        try { raw=message.domain?await chrome.cookies.getAll({domain:message.domain}):await chrome.cookies.getAll({}); } catch {}
+        const now=Date.now()/1000;
+        const cookies=(raw||[]).map(c=>({
           ...c,
-          daysRemaining:   c.expirationDate ? Math.max(0, Math.round((c.expirationDate - now) / 86400)) : null,
-          isSession:       !c.expirationDate,
-          expiryFormatted: c.expirationDate ? new Date(c.expirationDate * 1000).toLocaleDateString() : 'Session'
+          daysRemaining:c.expirationDate?Math.max(0,Math.round((c.expirationDate-now)/86400)):null,
+          isSession:!c.expirationDate,
+          expiryFormatted:c.expirationDate?new Date(c.expirationDate*1000).toLocaleDateString():'Session'
         }));
-        sendResponse({ cookies, success: true });
+        sendResponse({cookies,success:true});
       }
 
-      // ── DELETE_COOKIE — also clears localStorage ────────────────────────────
-      else if (action === 'DELETE_COOKIE') {
-        const domain = (message.domain || '').replace(/^\./, '') ||
-          (() => { try { return clean(new URL(message.url).hostname); } catch { return ''; } })();
-        await deleteCookieAndStorage(message.name, message.url, domain);
-        sendResponse({ success: true });
-      }
-
-      // ── DELETE_ALL_COOKIES_FOR_SITE ────────────────────────────────────────
-      else if (action === 'DELETE_ALL_COOKIES_FOR_SITE') {
-        let removed = 0;
+      else if (action==='DELETE_COOKIE') {
+        const domain=(message.domain||'').replace(/^\./,'')||
+          (()=>{ try{return clean(new URL(message.url).hostname);}catch{return '';} })();
+        await deleteCookieAndStorage(message.name,message.url,domain);
+        // Refresh risk after cookie deletion
         try {
-          const all = await chrome.cookies.getAll({ domain: message.domain });
+          const tabs=await chrome.tabs.query({ active:true, currentWindow:true });
+          if (tabs[0]) { riskDebounce[tabs[0].id]=0; await updateRisk(tabs[0].id); }
+        } catch {}
+        sendResponse({success:true});
+      }
+
+      else if (action==='DELETE_ALL_COOKIES_FOR_SITE') {
+        let removed=0;
+        try {
+          const all=await chrome.cookies.getAll({domain:message.domain});
           for (const c of all) {
-            const url = `${c.secure?'https':'http'}://${(c.domain||'').replace(/^\./,'')}${c.path||'/'}`;
-            await deleteCookieAndStorage(c.name, url, message.domain);
+            const url=`${c.secure?'https':'http'}://${(c.domain||'').replace(/^\./,'')}${c.path||'/'}`;
+            await deleteCookieAndStorage(c.name,url,message.domain);
             removed++;
           }
-
-          // Also clear entire localStorage for this domain on any open tabs
-          const tabs = await chrome.tabs.query({});
+          const tabs=await chrome.tabs.query({});
           for (const tab of tabs) {
             try {
               if (!clean(new URL(tab.url).hostname).includes(clean(message.domain))) continue;
-              await chrome.scripting.executeScript({
-                target: { tabId: tab.id },
-                func: () => { try { localStorage.clear(); sessionStorage.clear(); } catch {} }
-              });
+              await chrome.scripting.executeScript({ target:{tabId:tab.id},
+                func:()=>{ try{localStorage.clear();sessionStorage.clear();}catch{} } });
+              riskDebounce[tab.id]=0; await updateRisk(tab.id);
             } catch {}
           }
         } catch {}
-        sendResponse({ success: true, removed });
+        sendResponse({success:true,removed});
       }
 
-      // ── GET_RISK_HISTORY ───────────────────────────────────────────────────
-      else if (action === 'GET_RISK_HISTORY') {
-        let history = [];
-        try { history = await storageManager.getRiskHistorySince(Date.now() - (message.hours||24) * 3600000); } catch {}
-        sendResponse({ history: history||[], success: true });
-      }
-
-      // ── WHITELIST_DOMAIN ───────────────────────────────────────────────────
-      else if (action === 'WHITELIST_DOMAIN') {
-        userWhitelist.add(message.domain);
+      else if (action==='GET_RISK_HISTORY') {
+        let history=[];
         try {
-          await storageManager.put('sites', { domain:'__whitelist__', domains:[...userWhitelist] });
+          if (message.domain) {
+            history=await storageManager.getRiskHistoryForDomain(message.domain,100);
+          } else {
+            history=await storageManager.getRiskHistorySince(Date.now()-(message.hours||24)*3600000);
+          }
         } catch {}
-        sendResponse({ success: true });
+        sendResponse({history:history||[],success:true});
       }
 
-      // ── TRUST_DOMAIN ───────────────────────────────────────────────────────
-      else if (action === 'TRUST_DOMAIN') {
-        const d = message.domain;
-        if (!d) { sendResponse({ success:false, error:'No domain' }); return; }
-        trustedDomains[d] = { ts: Date.now(), reason: message.reason || 'user' };
-        try { await chrome.storage.local.set({ trustedDomains }); } catch {}
-        // Reset risk for active tabs of this domain
-        for (const [tid, s] of Object.entries(tabStats)) {
-          if (clean(s.domain) === clean(d)) { s.riskScore=0; s.riskLevel='LOW'; }
+      else if (action==='GET_BLOCKED_REQUESTS') {
+        let blocked=[];
+        try { blocked=await storageManager.getBlockedRequests(message.limit||200); } catch {}
+        sendResponse({blocked:blocked||[],success:true,adsBlockedCount,trackersBlockedCount});
+      }
+
+      else if (action==='CLEAR_BLOCKED_REQUESTS') {
+        try { await storageManager.clearBlockedRequests(); blockedLog.length=0; sendResponse({success:true}); }
+        catch(e) { sendResponse({success:false,error:e.message}); }
+      }
+
+      else if (action==='WHITELIST_DOMAIN') {
+        userWhitelist.add(message.domain);
+        try { await storageManager.put('sites',{domain:'__whitelist__',domains:[...userWhitelist]}); } catch {}
+        sendResponse({success:true});
+      }
+
+      else if (action==='TRUST_DOMAIN') {
+        const d=message.domain;
+        if (!d) { sendResponse({success:false,error:'No domain'}); return; }
+        trustedDomains[d]={ts:Date.now(),reason:message.reason||'user'};
+        try { await chrome.storage.local.set({trustedDomains}); } catch {}
+        for (const [tid,s] of Object.entries(tabStats)) {
+          if (clean(s.domain)===clean(d)) s.trustOverride=true;
         }
-        log('Trusted:', d);
-        sendResponse({ success:true });
+        log('Trusted:',d);
+        sendResponse({success:true});
       }
 
-      // ── UNTRUST_DOMAIN ─────────────────────────────────────────────────────
-      else if (action === 'UNTRUST_DOMAIN') {
-        const d = message.domain;
+      else if (action==='UNTRUST_DOMAIN') {
+        const d=message.domain;
         delete trustedDomains[d];
-        try { await chrome.storage.local.set({ trustedDomains }); } catch {}
-        sendResponse({ success:true });
+        try { await chrome.storage.local.set({trustedDomains}); } catch {}
+        for (const [tid,s] of Object.entries(tabStats)) {
+          if (clean(s.domain)===clean(d)) { s.trustOverride=false; riskDebounce[tid]=0; await updateRisk(parseInt(tid)); }
+        }
+        sendResponse({success:true});
       }
 
-      // ── GET_TRUST_STATUS ───────────────────────────────────────────────────
-      else if (action === 'GET_TRUST_STATUS') {
-        sendResponse({ trusted: !!trustedDomains[message.domain], trustedAt: trustedDomains[message.domain]?.ts || null });
+      else if (action==='GET_TRUST_STATUS') {
+        sendResponse({trusted:!!trustedDomains[message.domain],trustedAt:trustedDomains[message.domain]?.ts||null});
       }
 
-      // ── GET_PROJECTION ─────────────────────────────────────────────────────
-      else if (action === 'GET_PROJECTION') {
-        const [tab] = await chrome.tabs.query({ active:true, currentWindow:true });
-        const s = tab ? getTabStats(tab.id) : null;
-        sendResponse({ projection: s?.projection || null, success:true });
+      else if (action==='SET_STRICT_MODE') {
+        strictMode=!!message.enabled;
+        try { await chrome.storage.local.set({strictMode}); } catch {}
+        if (strictMode) await setupAdBlocking();
+        sendResponse({success:true,strictMode});
       }
 
-      // ── GET_DNA_HASH ───────────────────────────────────────────────────────
-      else if (action === 'GET_DNA_HASH') {
-        const [tab] = await chrome.tabs.query({ active:true, currentWindow:true });
-        const s = tab ? getTabStats(tab.id) : null;
-        const bh = tab ? getTabBehavior(tab.id) : null;
-        sendResponse({ hash: s?.dnaHash||null, signature: bh||null, success:true });
+      else if (action==='GET_PROJECTION') {
+        const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+        const s=tab?getTabStats(tab.id):null;
+        sendResponse({projection:s?.projection||null,success:true});
       }
 
-      // ── GET_RESEARCH_DATA ──────────────────────────────────────────────────
-      else if (action === 'GET_RESEARCH_DATA') {
-        const [tab] = await chrome.tabs.query({ active:true, currentWindow:true });
-        const s  = tab ? getTabStats(tab.id) : {};
-        const bh = tab ? getTabBehavior(tab.id) : {};
-        const sc = tab ? tabStaticCache[tab.id] : null;
+      else if (action==='GET_DNA_HASH') {
+        const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+        const s=tab?getTabStats(tab.id):null;
+        const bh=tab?getTabBehavior(tab.id):null;
+        sendResponse({hash:s?.dnaHash||null,signature:bh||null,success:true});
+      }
+
+      else if (action==='GET_RESEARCH_DATA') {
+        const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+        const s=tab?getTabStats(tab.id):{};
+        const bh=tab?getTabBehavior(tab.id):{};
+        const sc=tab?tabStaticCache[tab.id]:null;
+        let blockedRecent=[];
+        try { blockedRecent=await storageManager.getBlockedRequests(50); } catch {}
         sendResponse({
-          success: true,
-          domain:         s.domain || '',
-          riskScore:      s.riskScore,
-          staticScore:    s.staticScore,
-          behavioralScore: s.behavioralScore,
-          reputationScore: s.reputationScore,
-          staticBreakdown: sc?.breakdown || [],
-          rawHeaders:     sc?.rawHeaders || {},
-          dnaHash:        s.dnaHash,
-          behavioralSignature: bh,
-          clusterMatch:   bh ? dnaCluster(bh.apiCounts||{}) : null,
-          projection:     s.projection,
-          ts:             Date.now()
+          success:true,
+          domain:s.domain||'',
+          riskScore:s.riskScore, staticScore:s.staticScore,
+          behavioralScore:s.behavioralScore, reputationScore:s.reputationScore,
+          currentSessionRisk:s.currentSessionRisk, historicalRisk:s.historicalRisk,
+          staticBreakdown:sc?.breakdown||[], rawHeaders:sc?.rawHeaders||{},
+          dnaHash:s.dnaHash, behavioralSignature:bh,
+          clusterMatch:bh?dnaCluster(bh.apiCounts||{}):null,
+          projection:s.projection, blockedRecent,
+          adsBlockedCount, trackersBlockedCount, strictMode,
+          ts:Date.now()
         });
       }
 
-      // ── RELOAD_TRUSTED_DOMAINS (called by settings.js after manual trust edits) ─
-      else if (action === 'RELOAD_TRUSTED_DOMAINS') {
+      else if (action==='RELOAD_TRUSTED_DOMAINS') {
         try {
-          const stored = await chrome.storage.local.get('trustedDomains');
-          trustedDomains = stored.trustedDomains || {};
-          sendResponse({ success: true, count: Object.keys(trustedDomains).length });
-        } catch (e) { sendResponse({ success: false, error: e.message }); }
+          const stored=await chrome.storage.local.get('trustedDomains');
+          trustedDomains=stored.trustedDomains||{};
+          sendResponse({success:true,count:Object.keys(trustedDomains).length});
+        } catch(e) { sendResponse({success:false,error:e.message}); }
       }
 
-      // ── DELETE_SITE ────────────────────────────────────────────────────────
-      else if (action === 'DELETE_SITE') {
+      else if (action==='DELETE_SITE') {
         try {
-          await storageManager.delete('sites', message.domain);
-          // Remove all tracker entries for this site
-          const all = await storageManager.getAll('trackers', 5000);
-          await Promise.all(
-            (all||[]).filter(t => t.siteDomain === message.domain)
-                     .map(t => storageManager.delete('trackers', t.id))
-          );
-          // Remove from runtime stats
-          for (const [tid, stats] of Object.entries(tabStats)) {
-            if (stats.domain === message.domain) delete tabStats[tid];
+          await storageManager.delete('sites',message.domain);
+          const all=await storageManager.getAll('trackers',5000);
+          await Promise.all((all||[]).filter(t=>t.siteDomain===message.domain).map(t=>storageManager.delete('trackers',t.id)));
+          for (const [tid,stats] of Object.entries(tabStats)) {
+            if (stats.domain===message.domain) delete tabStats[tid];
           }
-          sendResponse({ success: true });
-        } catch (e) { sendResponse({ success: false, error: e.message }); }
+          sendResponse({success:true});
+        } catch(e) { sendResponse({success:false,error:e.message}); }
       }
 
-      // ── FINGERPRINT_DETECTED (from content script) ─────────────────────────
-      else if (action === 'FINGERPRINT_DETECTED') {
-        const data = message.data;
-        if (!data) { sendResponse({ received: true }); return; }
+      else if (action==='FINGERPRINT_DETECTED') {
+        const data=message.data;
+        if (!data) { sendResponse({received:true}); return; }
         let domain;
-        try { domain = clean(new URL(data.url).hostname); } catch { sendResponse({ received:true }); return; }
-        const total = (data.canvas||0) + (data.webgl||0) + (data.audio||0);
-        if (total > 0) {
-          await updateSiteStats(domain, { fingerprintCount: total });
+        try { domain=clean(new URL(data.url).hostname); } catch { sendResponse({received:true}); return; }
+        const total=(data.canvas||0)+(data.webgl||0)+(data.audio||0);
+        if (total>0) {
+          await updateSiteStats(domain,{fingerprintCount:total});
           try {
-            const [tab] = await chrome.tabs.query({ active:true, currentWindow:true });
+            const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
             if (tab) {
-              const s = getTabStats(tab.id);
-              s.fingerprintCount += total;
-              if (!s.domain) s.domain = domain;
+              const s=getTabStats(tab.id);
+              s.fingerprintCount+=(total);
+              if (!s.domain) s.domain=domain;
+              // Merge behavioral API data from content script report
+              const bh=getTabBehavior(tab.id);
+              for (const k of DNA_KEYS) { if (data[k]) bh.apiCounts[k]=(bh.apiCounts[k]||0)+data[k]; }
               await updateRisk(tab.id);
             }
           } catch {}
         }
-        sendResponse({ received: true });
+        sendResponse({received:true});
       }
 
-      // ── GET_GRAPH_DATA — builds tracker-site graph from stored data ────────
-      else if (action === 'GET_GRAPH_DATA') {
+      else if (action==='GET_GRAPH_DATA') {
         try {
-          const trackerEntries = await storageManager.getAll('trackers', 5000);
-          const nodeMap = new Map();
-          const linkSet = new Set();
-          const links   = [];
-
-          for (const entry of (trackerEntries || [])) {
-            const { siteDomain, trackerDomain, count } = entry;
-            if (!siteDomain || !trackerDomain) continue;
-
-            if (!nodeMap.has(siteDomain)) {
-              nodeMap.set(siteDomain, { id: siteDomain, type: 'site',    weight: 1 });
-            }
-            if (!nodeMap.has(trackerDomain)) {
-              nodeMap.set(trackerDomain, { id: trackerDomain, type: 'tracker', weight: 0 });
-            }
-            nodeMap.get(trackerDomain).weight += (count || 1);
-
-            const key = `${siteDomain}::${trackerDomain}`;
-            if (!linkSet.has(key)) {
-              linkSet.add(key);
-              links.push({ source: siteDomain, target: trackerDomain, value: count || 1 });
-            }
+          const trackerEntries=await storageManager.getAll('trackers',5000);
+          const nodeMap=new Map(); const linkSet=new Set(); const links=[];
+          for (const {siteDomain,trackerDomain,count} of (trackerEntries||[])) {
+            if (!siteDomain||!trackerDomain) continue;
+            if (!nodeMap.has(siteDomain)) nodeMap.set(siteDomain,{id:siteDomain,type:'site',weight:1});
+            if (!nodeMap.has(trackerDomain)) nodeMap.set(trackerDomain,{id:trackerDomain,type:'tracker',weight:0});
+            nodeMap.get(trackerDomain).weight+=(count||1);
+            const key=`${siteDomain}::${trackerDomain}`;
+            if (!linkSet.has(key)) { linkSet.add(key); links.push({source:siteDomain,target:trackerDomain,value:count||1}); }
           }
-
-          sendResponse({
-            success: true,
-            nodes:   Array.from(nodeMap.values()),
-            links
-          });
-        } catch (e) { sendResponse({ success: false, nodes: [], links: [], error: e.message }); }
+          sendResponse({success:true,nodes:Array.from(nodeMap.values()),links});
+        } catch(e) { sendResponse({success:false,nodes:[],links:[],error:e.message}); }
       }
 
-      // ── CLEAR_ALL ──────────────────────────────────────────────────────────
-      else if (action === 'CLEAR_ALL') {
+      else if (action==='CLEAR_ALL') {
         try { await storageManager.clearAll(); } catch {}
-        Object.keys(tabStats).forEach(k => delete tabStats[k]);
-        sendResponse({ success: true });
+        Object.keys(tabStats).forEach(k=>delete tabStats[k]);
+        adsBlockedCount=0; trackersBlockedCount=0;
+        try { await chrome.storage.local.set({adsBlockedCount:0,trackersBlockedCount:0}); } catch {}
+        sendResponse({success:true});
       }
 
       else {
-        warn('Unknown action:', action);
-        sendResponse({ ok: false, action });
+        warn('Unknown action:',action);
+        sendResponse({ok:false,action});
       }
 
-    } catch (e) {
-      console.error('[PRIVISEE-X BG] Handler error:', e);
-      try { sendResponse({ error: e.message }); } catch {}
+    } catch(e) {
+      console.error('[PRIVISEE-X BG] Handler error:',e);
+      try { sendResponse({error:e.message}); } catch {}
     }
   })();
-  return true; // keep message port open
+  return true;
 });
 
-// ── Daily Cleanup via chrome.alarms ──────────────────────────────────────────
+// ── Daily Cleanup ─────────────────────────────────────────────────────────────
 if (chrome.alarms) {
-  chrome.alarms.create('daily_cleanup', { periodInMinutes: 1440 });
+  chrome.alarms.create('daily_cleanup',{ periodInMinutes:1440 });
   chrome.alarms.onAlarm.addListener(async (alarm) => {
-    if (alarm.name === 'daily_cleanup') {
-      try {
-        const removed = await storageManager.cleanupOldData();
-        log(`Daily cleanup: ${removed} stale records removed`);
-      } catch (e) {
-        warn('Daily cleanup failed:', e.message);
-      }
+    if (alarm.name==='daily_cleanup') {
+      try { const r=await storageManager.cleanupOldData(); log(`Cleanup: ${r} records removed`); }
+      catch(e) { warn('Cleanup failed:',e.message); }
     }
   });
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
-  log('Initializing...');
-  // Init DB first — if this fails, log but don't crash
-  try {
-    await storageManager.init();
-    log('StorageManager ready');
-  } catch (e) {
-    warn('StorageManager init failed:', e.message);
-  }
+  log('Initializing v3.0...');
+  try { await storageManager.init(); log('StorageManager ready'); }
+  catch(e) { warn('StorageManager init failed:',e.message); }
 
-  // Load whitelist from DB
   try {
-    const wl = await storageManager.get('sites', '__whitelist__');
-    if (wl?.domains) wl.domains.forEach(d => userWhitelist.add(d));
-    log('Whitelist loaded:', userWhitelist.size, 'domains');
+    const wl=await storageManager.get('sites','__whitelist__');
+    if (wl?.domains) wl.domains.forEach(d=>userWhitelist.add(d));
   } catch {}
 
-  // Load trusted domains from chrome.storage.local (persistent across SW restarts)
   try {
-    const local = await chrome.storage.local.get('trustedDomains');
-    if (local.trustedDomains) {
-      trustedDomains = local.trustedDomains;
-      log('Trusted domains loaded:', Object.keys(trustedDomains).length);
-    }
+    const local=await chrome.storage.local.get(['trustedDomains','strictMode','adsBlockedCount','trackersBlockedCount']);
+    if (local.trustedDomains) trustedDomains=local.trustedDomains;
+    if (local.strictMode)     strictMode=local.strictMode;
+    adsBlockedCount     =local.adsBlockedCount     ||0;
+    trackersBlockedCount=local.trackersBlockedCount||0;
+    log('Trusted domains:',Object.keys(trustedDomains).length,'Strict:',strictMode);
   } catch {}
 
-  // Load research mode preference
-  try {
-    const local = await chrome.storage.local.get('researchModeEnabled');
-    log('Research mode:', local.researchModeEnabled ? 'ON' : 'OFF');
-  } catch {}
-
-  // Set up ad blocking rules (non-fatal if fails)
   await setupAdBlocking();
-
-  // Set up webRequest + webNavigation + tab listeners
   setupListeners();
-
-  log('PRIVISEE-X ready ✓');
+  log('PRIVISEE-X v3.0 ready ✓');
 }
 
-init().catch(e => console.error('[PRIVISEE-X BG] Fatal init error:', e));
+init().catch(e=>console.error('[PRIVISEE-X BG] Fatal init error:',e));

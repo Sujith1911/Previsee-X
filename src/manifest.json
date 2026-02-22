@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PRIVISEE-X",
-  "version": "2.0.0",
-  "description": "Explainable Behavioral Privacy Intelligence — Dual-layer risk engine, behavioral DNA hashing, threat projection, and trust persistence.",
+  "version": "3.0.0",
+  "description": "PRIVISEE-X v3.0 — Local Privacy Firewall, Behavioral Risk Engine, Static Security Analyzer, Redirect Protection, and Predictive Intelligence. 100% local, zero data transmission.",
   "permissions": [
     "storage",
     "cookies",

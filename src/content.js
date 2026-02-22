@@ -1,5 +1,5 @@
 /**
- * PRIVISEE-X v2.0 Content Script
+ * PRIVISEE-X v3.0 Content Script
  * Extended Behavioral Monitoring
  *
  * Monitors: Canvas, WebGL, AudioContext, Fonts, Battery, WebRTC,

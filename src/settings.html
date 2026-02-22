@@ -344,7 +344,7 @@
       <div class="setting-item">
         <div class="setting-header">
           <div>
-            <div class="setting-title">Static Intelligence Engine <span style="font-size:10px;background:#6366f118;color:#818cf8;border:1px solid #6366f130;padding:2px 6px;border-radius:4px;margin-left:6px">v2.0</span></div>
+            <div class="setting-title">Static Intelligence Engine <span style="font-size:10px;background:#6366f118;color:#818cf8;border:1px solid #6366f130;padding:2px 6px;border-radius:4px;margin-left:6px">v3.0</span></div>
             <div class="setting-description">Score every site from HTTP headers, HTTPS status, cookie flags, and domain TLD — even with zero trackers</div>
           </div>
           <label class="toggle-switch">
@@ -357,7 +357,7 @@
       <div class="setting-item">
         <div class="setting-header">
           <div>
-            <div class="setting-title">Threat Projection <span style="font-size:10px;background:#6366f118;color:#818cf8;border:1px solid #6366f130;padding:2px 6px;border-radius:4px;margin-left:6px">v2.0</span></div>
+            <div class="setting-title">Threat Projection <span style="font-size:10px;background:#6366f118;color:#818cf8;border:1px solid #6366f130;padding:2px 6px;border-radius:4px;margin-left:6px">v3.0</span></div>
             <div class="setting-description">30-day risk trajectory using EMA + behavioral DNA cluster matching</div>
           </div>
           <label class="toggle-switch">
@@ -370,11 +370,24 @@
       <div class="setting-item">
         <div class="setting-header">
           <div>
-            <div class="setting-title">Research Mode <span style="font-size:10px;background:#6366f118;color:#818cf8;border:1px solid #6366f130;padding:2px 6px;border-radius:4px;margin-left:6px">v2.0</span></div>
-            <div class="setting-description">Enable raw data snapshot panel in dashboard with JSON export (for researchers and power users)</div>
+            <div class="setting-title">Research Mode <span style="font-size:10px;background:#6366f118;color:#818cf8;border:1px solid #6366f130;padding:2px 6px;border-radius:4px;margin-left:6px">v3.0</span></div>
+            <div class="setting-description">Enable raw data snapshot panel in popup/dashboard with JSON export (for researchers and power users)</div>
           </div>
           <label class="toggle-switch">
             <input type="checkbox" id="toggleResearchMode">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-header">
+          <div>
+            <div class="setting-title">🔥 Strict Mode <span style="font-size:10px;background:#ef444420;color:#f87171;border:1px solid #ef444430;padding:2px 6px;border-radius:4px;margin-left:6px">v3.0</span></div>
+            <div class="setting-description">Aggressively block suspicious TLDs (.xyz, .tk, .ml), short-name domains, popup/redirect patterns, and ad networks. May cause some sites to behave unexpectedly.</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggleStrictMode">
             <span class="toggle-slider"></span>
           </label>
         </div>
@@ -461,14 +474,13 @@
       </div>
     </section>
 
-    <!-- About -->
     <section class="setting-category">
       <h2>About</h2>
       <div class="setting-item">
-        <div class="setting-title">PRIVISEE-X v2.0.0</div>
+        <div class="setting-title">PRIVISEE-X v3.0.0</div>
         <div class="setting-description">
-          AI-Powered Privacy Intelligence System<br>
-          Zero telemetry • 100% local processing • Open source
+          Local Privacy Firewall · Behavioral Risk Engine · Static Security Analyzer<br>
+          Zero telemetry &bull; 100% local processing &bull; Open source
         </div>
         <div class="info-box">
           Made with ❤️ for privacy. Licensed under MIT.<br>

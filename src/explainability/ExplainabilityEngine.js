@@ -1,5 +1,5 @@
 /**
- * PRIVISEE-X v2.0
+ * PRIVISEE-X v3.0
  * Explainability: ExplainabilityEngine
  * 
  * Demystifies the risk score by:
@@ -19,8 +19,12 @@ export class ExplainabilityEngine extends EngineBase {
   }
 
   /**
-   * Generate explanation for a Risk Score
-   * @param {object} context - { trackers, fingerprintAttempts, cookiesThirdParty, isHTTP, isAnomalous, isSecure, riskScore }
+   * Generate explanation for a Risk Score (v3.0)
+   * @param {object} context - {
+   *   trackers, fingerprintAttempts, cookiesThirdParty, isHTTP,
+   *   isAnomalous, isSecure, riskScore, riskLevel,
+   *   staticScore, behavioralScore, reputationScore, staticBreakdown
+   * }
    * @returns {{ summary, narrative, factors, contributionTotal }}
    */
   async execute(context) {
@@ -81,6 +85,20 @@ export class ExplainabilityEngine extends EngineBase {
       });
     }
 
+    // ── Static security headers score (v3.0: 30% weight in final risk)
+    const staticScore = context.staticScore || 0;
+    if (staticScore >= 10) {
+      const contribution = parseFloat((staticScore * 0.30).toFixed(1));
+      const topHeaderIssue = (context.staticBreakdown || [])[0]?.factor || 'Missing security headers';
+      factors.push({
+        key:          'static_score',
+        type:         'negative',
+        impact:       staticScore >= 50 ? 'HIGH' : 'MODERATE',
+        contribution,
+        text:         `Static security score: ${staticScore}/100 — ${topHeaderIssue}.`
+      });
+    }
+
     // ── Anomalous behavior
     if (isAnomalous) {
       factors.push({
@@ -92,13 +110,13 @@ export class ExplainabilityEngine extends EngineBase {
       });
     }
 
-    // ── Security headers
+    // ── Security headers (when staticScore is low/zero but headers missing)
     if (!isSecure) {
       factors.push({
         key:          'security_headers',
         type:         'negative',
         impact:       'HIGH',
-        contribution: 0, // Reported separately by SecurityAuditEngine
+        contribution: 0,
         text:         'Missing critical security headers (CSP, HSTS, or X-Frame-Options).'
       });
     }

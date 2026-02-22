@@ -13,129 +13,151 @@
       --green:#10b981;--yellow:#f59e0b;--orange:#f97316;--red:#ef4444;
       --border:rgba(255,255,255,0.07);
     }
-    body{
-      width:380px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-      background:var(--bg);color:var(--text);font-size:13px;
-    }
+    body{width:420px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+         background:var(--bg);color:var(--text);font-size:13px;}
 
     /* Header */
-    .hdr{background:var(--s1);border-bottom:1px solid var(--border);padding:10px 16px;
+    .hdr{background:var(--s1);border-bottom:1px solid var(--border);padding:10px 14px;
          display:flex;align-items:center;justify-content:space-between;}
     .brand{display:flex;align-items:center;gap:8px;}
-    .brand h1{font-size:15px;font-weight:700;background:linear-gradient(135deg,#6366f1,#8b5cf6);
+    .brand h1{font-size:14px;font-weight:700;background:linear-gradient(135deg,#6366f1,#8b5cf6);
               -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
-    .brand .site{font-size:11px;color:var(--muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-    .live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;}
+    .brand .site{font-size:10px;color:var(--muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;flex-shrink:0;}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+    .hdr-right{display:flex;align-items:center;gap:6px;}
+    .dna-pill{font-family:monospace;font-size:9px;color:var(--a2);
+              background:#8b5cf618;border:1px solid #8b5cf630;padding:2px 6px;border-radius:4px;letter-spacing:.5px;}
+    .trust-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;
+                 background:#10b98118;color:var(--green);border:1px solid #10b98130;}
 
     /* Loading */
     .loading{text-align:center;padding:32px 20px;color:var(--muted);}
 
     /* Trust Banner */
-    .trust-banner{
-      background:linear-gradient(135deg,#052e16,#064e3b);
-      border-bottom:1px solid #10b98130;
-      padding:8px 16px;display:flex;align-items:center;gap:8px;
-    }
-    .trust-banner .icon{font-size:16px;}
-    .trust-banner .info{flex:1;}
-    .trust-banner .info strong{color:var(--green);font-size:12px;font-weight:700;}
-    .trust-banner .info span{display:block;font-size:10px;color:#6ee7b7;margin-top:1px;}
+    .trust-banner{background:linear-gradient(135deg,#052e16,#064e3b);
+                  border-bottom:1px solid #10b98130;padding:7px 14px;display:flex;align-items:center;gap:8px;}
     .btn-untrust{background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);
                  color:#ef4444;padding:3px 8px;border-radius:5px;cursor:pointer;font-size:10px;font-weight:600;}
 
-    /* Risk Gauge */
-    .risk-section{padding:16px;background:var(--s1);border-bottom:1px solid var(--border);}
-    .risk-row{display:flex;align-items:center;gap:12px;margin-bottom:12px;}
-    .score-circle{
-      width:72px;height:72px;border-radius:50%;
-      display:flex;flex-direction:column;align-items:center;justify-content:center;
-      border:3px solid var(--acc);flex-shrink:0;background:var(--s2);
-    }
-    .score-circle .num{font-size:24px;font-weight:800;line-height:1;}
-    .score-circle .lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px;}
+    /* Risk Section */
+    .risk-section{padding:14px;background:var(--s1);border-bottom:1px solid var(--border);}
+    .risk-row{display:flex;align-items:center;gap:12px;margin-bottom:10px;}
+    .score-circle{width:70px;height:70px;border-radius:50%;display:flex;flex-direction:column;
+                  align-items:center;justify-content:center;border:3px solid var(--acc);
+                  flex-shrink:0;background:var(--s2);}
+    .score-circle .num{font-size:22px;font-weight:800;line-height:1;}
+    .score-circle .lbl{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px;}
     .risk-meta{flex:1;}
-    .risk-level-chip{
-      display:inline-block;padding:3px 10px;border-radius:99px;font-size:11px;font-weight:700;
-      margin-bottom:6px;
-    }
-    .chip-low    {background:#10b98118;color:#10b981;border:1px solid #10b98130;}
-    .chip-mod    {background:#f59e0b18;color:#f59e0b;border:1px solid #f59e0b30;}
-    .chip-high   {background:#f9731618;color:#f97316;border:1px solid #f9731630;}
-    .chip-crit   {background:#ef444418;color:#ef4444;border:1px solid #ef444430;}
-    .score-bars{display:flex;flex-direction:column;gap:5px;}
+    .risk-level-chip{display:inline-block;padding:3px 10px;border-radius:99px;font-size:10px;font-weight:700;margin-bottom:6px;}
+    .chip-low{background:#10b98118;color:#10b981;border:1px solid #10b98130;}
+    .chip-mod{background:#f59e0b18;color:#f59e0b;border:1px solid #f59e0b30;}
+    .chip-high{background:#f9731618;color:#f97316;border:1px solid #f9731630;}
+    .chip-crit{background:#ef444418;color:#ef4444;border:1px solid #ef444430;}
+    .score-bars{display:flex;flex-direction:column;gap:4px;}
     .bar-row{display:flex;align-items:center;gap:6px;}
-    .bar-lbl{font-size:10px;color:var(--muted);width:72px;flex-shrink:0;}
-    .bar-track{flex:1;height:5px;background:var(--s3);border-radius:3px;overflow:hidden;}
+    .bar-lbl{font-size:9px;color:var(--muted);width:68px;flex-shrink:0;}
+    .bar-track{flex:1;height:4px;background:var(--s3);border-radius:3px;overflow:hidden;}
     .bar-fill{height:100%;border-radius:3px;transition:width .4s;}
-    .bar-val{font-size:10px;color:var(--muted);width:26px;text-align:right;flex-shrink:0;}
+    .bar-val{font-size:9px;color:var(--muted);width:22px;text-align:right;flex-shrink:0;}
 
-    /* Stats grid */
-    .stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);}
-    .stat{background:var(--s1);padding:10px;text-align:center;}
-    .stat .v{font-size:18px;font-weight:700;}
-    .stat .l{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px;}
+    /* Mini Sparkline */
+    .sparkline-row{margin-top:8px;}
+    .sparkline-lbl{font-size:9px;color:var(--muted);margin-bottom:3px;}
+    canvas#sparkline{width:100%;height:36px;display:block;}
 
-    /* Risk Breakdown */
-    .section{padding:12px 16px;border-bottom:1px solid var(--border);}
-    .section-hdr{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;
-                 letter-spacing:.5px;margin-bottom:8px;}
-    .factor-list{display:flex;flex-direction:column;gap:5px;}
+    /* Stats Grid */
+    .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);}
+    .stat{background:var(--s1);padding:8px 6px;text-align:center;}
+    .stat .v{font-size:16px;font-weight:700;}
+    .stat .l{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-top:2px;}
+
+    /* Firewall Counters */
+    .firewall-row{display:flex;gap:1px;background:var(--border);border-bottom:1px solid var(--border);}
+    .fw-stat{flex:1;background:#0d1117;padding:7px 8px;text-align:center;}
+    .fw-stat .v{font-size:15px;font-weight:700;}
+    .fw-stat.ads .v{color:var(--red);}
+    .fw-stat.track .v{color:var(--yellow);}
+    .fw-stat .l{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-top:2px;}
+
+    /* Sections */
+    .section{padding:10px 14px;border-bottom:1px solid var(--border);}
+    .section-hdr{font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;
+                 letter-spacing:.5px;margin-bottom:7px;display:flex;align-items:center;justify-content:space-between;}
+    .section-hdr a{font-size:9px;color:var(--acc);cursor:pointer;text-decoration:none;}
+
+    /* Factor list */
+    .factor-list{display:flex;flex-direction:column;gap:4px;}
     .factor{display:flex;align-items:center;gap:8px;}
-    .factor .icon{font-size:12px;width:16px;text-align:center;flex-shrink:0;}
-    .factor .text{flex:1;font-size:12px;color:var(--text);}
-    .factor .delta{font-size:11px;font-weight:700;color:var(--orange);flex-shrink:0;}
+    .factor .icon{font-size:11px;width:14px;text-align:center;flex-shrink:0;}
+    .factor .text{flex:1;font-size:11px;color:var(--text);}
+    .factor .delta{font-size:10px;font-weight:700;color:var(--orange);flex-shrink:0;}
 
-    /* Projection Chip */
-    .proj-chip{
-      display:flex;align-items:center;gap:8px;
-      background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;
-    }
-    .proj-icon{font-size:18px;}
-    .proj-info{flex:1;}
-    .proj-info .main{font-size:12px;font-weight:600;}
-    .proj-info .sub{font-size:10px;color:var(--muted);margin-top:1px;}
-    .proj-badge{
-      font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;
-    }
-    .proj-up  {background:#ef444418;color:#ef4444;border:1px solid #ef444430;}
+    /* Blocked Domains Panel */
+    .blocked-panel{max-height:120px;overflow-y:auto;display:flex;flex-direction:column;gap:3px;}
+    .blocked-item{display:flex;align-items:center;gap:6px;padding:4px 6px;
+                  background:var(--s3);border-radius:5px;font-size:10px;}
+    .blocked-type{font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;flex-shrink:0;}
+    .type-ad{background:#ef444420;color:#ef4444;}
+    .type-tracker{background:#f59e0b20;color:#f59e0b;}
+    .type-redirect{background:#8b5cf620;color:#a78bfa;}
+    .blocked-domain{flex:1;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .blocked-ts{font-size:8px;color:var(--muted);flex-shrink:0;}
+    .copy-btn{font-size:8px;color:var(--muted);cursor:pointer;flex-shrink:0;padding:1px 4px;
+              border:1px solid var(--border);border-radius:3px;background:none;}
+    .copy-btn:hover{color:var(--text);}
+
+    /* Search */
+    .search-bar{width:100%;padding:6px 10px;background:var(--s2);border:1px solid var(--border);
+                border-radius:6px;color:var(--text);font-size:11px;outline:none;
+                transition:border-color .2s;}
+    .search-bar:focus{border-color:var(--acc);}
+    .search-bar::placeholder{color:var(--muted);}
+
+    /* Projection */
+    .proj-chip{display:flex;align-items:center;gap:8px;background:var(--s2);
+               border:1px solid var(--border);border-radius:8px;padding:7px 10px;}
+    .proj-info .main{font-size:11px;font-weight:600;}
+    .proj-info .sub{font-size:9px;color:var(--muted);margin-top:1px;}
+    .proj-badge{font-size:9px;font-weight:700;padding:2px 6px;border-radius:99px;}
+    .proj-up{background:#ef444418;color:#ef4444;border:1px solid #ef444430;}
     .proj-down{background:#10b98118;color:#10b981;border:1px solid #10b98130;}
     .proj-flat{background:#6366f118;color:#818cf8;border:1px solid #6366f130;}
 
     /* Actions */
-    .actions{display:flex;gap:8px;padding:12px 16px;background:var(--s1);}
-    .btn{flex:1;padding:8px;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:12px;transition:all .15s;}
+    .actions{display:flex;gap:6px;padding:10px 14px;background:var(--s1);}
+    .btn{flex:1;padding:7px;border:none;border-radius:7px;cursor:pointer;font-weight:600;font-size:11px;transition:all .15s;}
     .btn-pri{background:var(--acc);color:white;}
     .btn-trust{background:#10b98118;color:var(--green);border:1px solid #10b98130;}
     .btn-sec{background:var(--s2);color:var(--text);border:1px solid var(--border);}
     .btn:hover{opacity:.82;transform:translateY(-1px);}
 
-    /* Research Mode Toggle */
-    .research-toggle{
-      display:flex;align-items:center;justify-content:space-between;
-      padding:10px 16px;border-top:1px solid var(--border);background:var(--s1);
-    }
-    .research-toggle label{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;}
-    .toggle{position:relative;width:32px;height:18px;}
+    /* Toggles Row */
+    .toggles-row{display:flex;align-items:center;justify-content:space-between;
+                 padding:8px 14px;border-top:1px solid var(--border);background:var(--s1);gap:8px;}
+    .toggle-item{display:flex;align-items:center;gap:5px;flex:1;}
+    .toggle-item label{font-size:9px;color:var(--muted);cursor:pointer;}
+    .toggle{position:relative;width:28px;height:16px;flex-shrink:0;}
     .toggle input{opacity:0;width:0;height:0;}
-    .toggle-slider{
-      position:absolute;top:0;left:0;right:0;bottom:0;background:var(--s3);
-      border-radius:18px;transition:.2s;cursor:pointer;
-    }
-    .toggle-slider:before{
-      content:'';position:absolute;height:12px;width:12px;left:3px;bottom:3px;
-      background:var(--muted);border-radius:50%;transition:.2s;
-    }
-    .toggle input:checked + .toggle-slider{background:var(--acc);}
-    .toggle input:checked + .toggle-slider:before{transform:translateX(14px);background:white;}
+    .toggle-slider{position:absolute;top:0;left:0;right:0;bottom:0;background:var(--s3);border-radius:16px;transition:.2s;cursor:pointer;}
+    .toggle-slider:before{content:'';position:absolute;height:10px;width:10px;left:3px;bottom:3px;
+                          background:var(--muted);border-radius:50%;transition:.2s;}
+    .toggle input:checked+.toggle-slider{background:var(--acc);}
+    .toggle input:checked+.toggle-slider:before{transform:translateX(12px);background:white;}
 
-    /* DNA Hash */
-    .dna-pill{
-      font-family:monospace;font-size:10px;color:var(--a2);
-      background:#8b5cf618;border:1px solid #8b5cf630;
-      padding:2px 7px;border-radius:4px;letter-spacing:.5px;
-    }
-    .empty-state{text-align:center;padding:16px;color:var(--muted);font-size:12px;}
+    /* Research Panel */
+    #researchPanel{background:var(--s2);border-top:1px solid var(--border);padding:10px 14px;display:none;}
+    .research-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;}
+    .research-item{background:var(--s3);padding:6px 8px;border-radius:6px;}
+    .research-item .lbl{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+    .research-item .val{font-size:11px;font-weight:600;color:var(--text);margin-top:2px;word-break:break-all;}
+    .btn-export{width:100%;padding:6px;background:var(--acc);color:white;border:none;border-radius:6px;
+                cursor:pointer;font-size:11px;font-weight:600;}
+    .btn-export:hover{opacity:.85;}
+
+    .empty-state{text-align:center;padding:12px;color:var(--muted);font-size:11px;}
+    .collapsible-toggle{cursor:pointer;user-select:none;}
+    .hidden{display:none !important;}
   </style>
 </head>
 <body>
@@ -149,24 +171,26 @@
       <div class="site" id="currentSite">Analyzing…</div>
     </div>
   </div>
-  <span class="dna-pill" id="dnaHash" title="Behavioral DNA Hash">—</span>
+  <div class="hdr-right">
+    <span class="trust-badge hidden" id="trustBadge">✓ TRUSTED</span>
+    <span class="dna-pill" id="dnaHash" title="Behavioral DNA Hash">—</span>
+  </div>
 </div>
 
 <!-- Loading -->
 <div id="loading" class="loading">
-  <div style="font-size:24px;margin-bottom:8px">🔍</div>
-  Analyzing page…
+  <div style="font-size:22px;margin-bottom:6px">🔍</div>Analyzing page…
 </div>
 
 <!-- Main Content -->
 <div id="content" style="display:none">
 
-  <!-- Trust Banner (shown when trusted) -->
+  <!-- Trust Banner -->
   <div id="trustBanner" class="trust-banner" style="display:none">
-    <div class="icon">✅</div>
-    <div class="info">
-      <strong>User Trusted Domain</strong>
-      <span>Risk overridden — all scores suppressed</span>
+    <div style="font-size:14px">✅</div>
+    <div style="flex:1">
+      <strong style="color:var(--green);font-size:11px;font-weight:700;">User Trusted Domain</strong>
+      <span style="display:block;font-size:9px;color:#6ee7b7;margin-top:1px;">Risk display suppressed — scores still computed internally</span>
     </div>
     <button class="btn-untrust" id="untrustBtn">Untrust</button>
   </div>
@@ -199,13 +223,36 @@
         </div>
       </div>
     </div>
+    <!-- Historical Risk Sparkline -->
+    <div class="sparkline-row">
+      <div class="sparkline-lbl">📈 Risk History (last 10 visits)</div>
+      <canvas id="sparkline" width="380" height="36"></canvas>
+    </div>
   </div>
 
-  <!-- Stats Grid -->
-  <div class="stats-grid">
-    <div class="stat"><div class="v" id="trackerCount">0</div><div class="l">Trackers</div></div>
-    <div class="stat"><div class="v" id="blockedAds" style="color:var(--red)">0</div><div class="l">🚫 Blocked</div></div>
-    <div class="stat"><div class="v" id="cookieCount">0</div><div class="l">Cookies</div></div>
+  <!-- Firewall Counters -->
+  <div class="firewall-row">
+    <div class="fw-stat ads">
+      <div class="v" id="adsBlockedCount">0</div>
+      <div class="l">🚫 Ads Blocked</div>
+    </div>
+    <div class="fw-stat track">
+      <div class="v" id="trackersBlockedCount">0</div>
+      <div class="l">📡 Trackers</div>
+    </div>
+    <div class="fw-stat">
+      <div class="v" id="trackerCount">0</div>
+      <div class="l">Detected</div>
+    </div>
+    <div class="fw-stat">
+      <div class="v" id="cookieCount">0</div>
+      <div class="l">Cookies</div>
+    </div>
+  </div>
+
+  <!-- Search Bar -->
+  <div class="section" style="padding:8px 14px;">
+    <input class="search-bar" id="searchBar" placeholder="🔎 Search domains, trackers, blocked…" autocomplete="off">
   </div>
 
   <!-- Risk Breakdown -->
@@ -216,11 +263,22 @@
     </div>
   </div>
 
+  <!-- Blocked Domains Panel -->
+  <div class="section" id="blockedSection">
+    <div class="section-hdr">
+      <span class="collapsible-toggle" id="blockedToggle">🚫 Blocked Domains <span id="blockedCount">(0)</span> ▼</span>
+      <a id="clearBlockedBtn">Clear</a>
+    </div>
+    <div id="blockedPanel" class="blocked-panel">
+      <div class="empty-state">No blocked domains yet</div>
+    </div>
+  </div>
+
   <!-- Threat Projection -->
   <div class="section" id="projectionSection">
-    <div class="section-hdr">📈 Threat Projection (30 Days)</div>
+    <div class="section-hdr">🔮 30-Day Threat Projection</div>
     <div class="proj-chip" id="projChip">
-      <div class="proj-icon">🔮</div>
+      <div style="font-size:16px">🔮</div>
       <div class="proj-info">
         <div class="main" id="projMain">Collecting history…</div>
         <div class="sub" id="projSub">Visit this site more to improve accuracy</div>
@@ -235,15 +293,57 @@
     <button class="btn btn-pri" id="dashboardBtn">📊 Dashboard</button>
   </div>
 
-  <!-- Research Mode Toggle -->
-  <div class="research-toggle">
-    <label>
-      🔬 Research Mode
-    </label>
-    <label class="toggle">
-      <input type="checkbox" id="researchToggle">
-      <span class="toggle-slider"></span>
-    </label>
+  <!-- Toggles Row -->
+  <div class="toggles-row">
+    <div class="toggle-item">
+      <label for="strictToggle">🛡️ Strict Mode</label>
+      <label class="toggle">
+        <input type="checkbox" id="strictToggle">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <div class="toggle-item">
+      <label for="researchToggle">🔬 Research</label>
+      <label class="toggle">
+        <input type="checkbox" id="researchToggle">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <!-- Research Panel (hidden by default) -->
+  <div id="researchPanel">
+    <div class="research-grid">
+      <div class="research-item">
+        <div class="lbl">Session Risk</div>
+        <div class="val" id="r_sessionRisk">—</div>
+      </div>
+      <div class="research-item">
+        <div class="lbl">Historical Risk</div>
+        <div class="val" id="r_historicalRisk">—</div>
+      </div>
+      <div class="research-item">
+        <div class="lbl">DNA Hash</div>
+        <div class="val" id="r_dnaHash" style="font-family:monospace;font-size:10px;">—</div>
+      </div>
+      <div class="research-item">
+        <div class="lbl">Cluster</div>
+        <div class="val" id="r_cluster">—</div>
+      </div>
+      <div class="research-item">
+        <div class="lbl">Static Score</div>
+        <div class="val" id="r_static">—</div>
+      </div>
+      <div class="research-item">
+        <div class="lbl">Behavioral</div>
+        <div class="val" id="r_behavioral">—</div>
+      </div>
+    </div>
+    <div style="margin-bottom:6px">
+      <div class="sparkline-lbl" style="margin-bottom:3px;">Raw Security Headers</div>
+      <div id="r_headers" style="font-size:9px;color:var(--muted);background:var(--s3);padding:5px 7px;border-radius:5px;max-height:60px;overflow-y:auto;font-family:monospace;word-break:break-all;"></div>
+    </div>
+    <button class="btn-export" id="exportBtn">⬇ Export Analytics JSON</button>
   </div>
 
 </div>

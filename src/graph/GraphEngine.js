@@ -1,5 +1,5 @@
 /**
- * PRIVISEE-X v2.0
+ * PRIVISEE-X v3.0
  * Graph: GraphEngine
  * 
  * Builds a directed graph of third-party connections.
@@ -199,7 +199,7 @@ export class GraphEngine extends EngineBase {
   exportGraphJSON() {
     const graph = this.exportGraph();
     return JSON.stringify({
-      version:    '2.0',
+      version:    '3.0',
       exportedAt: new Date().toISOString(),
       nodeCount:  graph.nodes.length,
       linkCount:  graph.links.length,

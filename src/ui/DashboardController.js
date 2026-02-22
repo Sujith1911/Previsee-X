@@ -1,24 +1,31 @@
 /**
- * PRIVISEE-X v2.0 — DashboardController
+ * PRIVISEE-X v3.0 — DashboardController
  *
  * Features:
  *  - Global site filter bar — applies to ALL tabs simultaneously
- *  - Blocked Ads tab (shown separately from detected ads)
+ *  - Blocked Ads tab + Firewall Log tab (blocked requests with full URL toggle)
+ *  - Global real-time search across all tabs
  *  - Cookie delete per-row + Delete All Cookies for Site
  *  - Tracker delete per-row + Delete All Trackers for Site
  *  - Sites tab with full stats + delete/whitelist per site
- *  - Risk timeline chart (defensive, won't block rest of UI)
+ *  - Risk timeline chart
+ *  - Export JSON (full analytics)
  */
 (function () {
   'use strict';
   const $ = id => document.getElementById(id);
 
   // ── State ──────────────────────────────────────────────────────────────────
-  let allSites    = [];
-  let allCookies  = [];
-  let allTrackers = [];     // tracker entries {id, siteDomain, trackerDomain, count, lastSeen}
-  let riskChart   = null;
-  let selectedSite = '';    // global cross-tab filter
+  let allSites      = [];
+  let allCookies    = [];
+  let allTrackers   = [];
+  let allBlocked    = [];
+  let riskChart     = null;
+  let selectedSite  = '';
+  let showFullURLs  = false;
+  let globalSearch  = '';
+  let adsBlockedTotal      = 0;
+  let trackersBlockedTotal = 0;
 
   // ── Messenger ──────────────────────────────────────────────────────────────
   function send(payload) {
@@ -71,15 +78,19 @@
 
   // ── Fetch ───────────────────────────────────────────────────────────────────
   async function fetchAll() {
-    const [dash, ck, tr, hist] = await Promise.all([
+    const [dash, ck, tr, hist, bl] = await Promise.all([
       send({ action: 'GET_DASHBOARD_DATA' }),
       send({ action: 'GET_ALL_COOKIES', domain: selectedSite || undefined }),
       send({ action: 'GET_TRACKERS_FOR_SITE', siteDomain: selectedSite || undefined }),
-      send({ action: 'GET_RISK_HISTORY', hours: 24 })
+      send({ action: 'GET_RISK_HISTORY', hours: 24 }),
+      send({ action: 'GET_BLOCKED_REQUESTS', limit: 500 })
     ]);
-    allSites    = (dash?.sites    || []).filter(s => s.domain && s.domain !== '__whitelist__');
-    allCookies  = ck?.cookies  || [];
-    allTrackers = tr?.trackers || [];
+    allSites      = (dash?.sites || []).filter(s => s.domain && s.domain !== '__whitelist__');
+    allCookies    = ck?.cookies  || [];
+    allTrackers   = tr?.trackers || [];
+    allBlocked    = bl?.blocked  || [];
+    adsBlockedTotal      = bl?.adsBlockedCount      || dash?.adsBlockedCount      || 0;
+    trackersBlockedTotal = bl?.trackersBlockedCount || dash?.trackersBlockedCount || 0;
     return hist?.history || [];
   }
 
@@ -118,7 +129,8 @@
 
       $('st-sites').textContent    = total;
       $('st-trackers').textContent = trackers;
-      $('st-blocked').textContent  = blocked;
+      $('st-blocked').textContent  = adsBlockedTotal || blocked;
+      if ($('st-trackers-blocked')) $('st-trackers-blocked').textContent = trackersBlockedTotal;
       $('st-ads').textContent      = ads;
       $('st-cookies').textContent  = cookies;
       $('st-fp').textContent       = fp;
@@ -415,21 +427,52 @@
   window.doDeleteSite    = _doDeleteSite;
   window.doWhitelist     = _doWhitelist;
 
-  // ── Export CSV ─────────────────────────────────────────────────────────────
-  function exportCSV() {
-    if (!allSites.length) { alert('No data to export.'); return; }
-    let csv = 'Domain,Risk Score,Risk Level,Trackers,Blocked Ads,Cookies,Fingerprinting,Last Visit\n';
+  // ── Firewall Log Tab ──────────────────────────────────────────────────────────
+  function renderBlocked(q = '') {
+    try {
+      const tbody = $('blBody'); if (!tbody) return;
+      const fl = (q || globalSearch).toLowerCase();
+      const rows = allBlocked.filter(b => {
+        if (selectedSite && b.domain !== selectedSite && !b.domain.includes(selectedSite)) return false;
+        if (fl && !b.domain.includes(fl) && !(showFullURLs && b.fullURL.includes(fl))) return false;
+        return true;
+      });
+      if ($('blCnt')) $('blCnt').textContent = `${rows.length} entries`;
+      if (!rows.length) {
+        tbody.innerHTML = `<tr><td colspan="4"><div class="empty-state"><div class="ico">🔥</div>${fl||selectedSite?'No matching entries.':'Firewall log is empty. Browse sites to capture blocked requests.'}</div></td></tr>`;
+        return;
+      }
+      tbody.innerHTML = rows.slice(0,250).map(b => {
+        const typeColor = b.type==='ad'?'var(--red)':b.type==='tracker'?'var(--yellow)':'#a78bfa';
+        const displayURL = showFullURLs ? esc(b.fullURL) : esc(b.domain);
+        const ts = new Date(b.timestamp).toLocaleString([],{dateStyle:'short',timeStyle:'short'});
+        return `<tr>
+          <td><strong>${esc(b.domain)}</strong></td>
+          <td><span style="color:${typeColor};font-size:11px;font-weight:700">${b.type}</span></td>
+          <td style="font-size:11px;color:var(--muted);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(b.fullURL)}">${displayURL}</td>
+          <td style="font-size:11px;color:var(--muted)">${ts}</td>
+        </tr>`;
+      }).join('');
+    } catch(e) { console.error('[Dash] blocked:', e); }
+  }
+
+  // ── Export JSON ────────────────────────────────────────────────────────────
+  async function exportJSON() {
     const src = selectedSite ? allSites.filter(s => s.domain===selectedSite) : allSites;
-    src.forEach(s => {
-      csv += [s.domain, s.riskScore||0, s.riskLevel||'LOW', s.trackerCount||0, s.blockedAds||0,
-              s.cookieCount||0, s.fingerprintCount||0,
-              s.lastVisit ? new Date(s.lastVisit).toISOString() : ''].join(',') + '\n';
-    });
+    const out = {
+      exportedAt: new Date().toISOString(),
+      filter: selectedSite || 'all',
+      summary: { sites: src.length, adsBlockedTotal, trackersBlockedTotal },
+      sites:   src,
+      trackers:allTrackers.filter(t => !selectedSite || t.siteDomain===selectedSite),
+      blockedRequests: allBlocked.filter(b => !selectedSite || b.domain.includes(selectedSite))
+    };
     const a = Object.assign(document.createElement('a'), {
-      href:     URL.createObjectURL(new Blob([csv],{type:'text/csv'})),
-      download: `privisee_x_${selectedSite||'all'}_${new Date().toISOString().split('T')[0]}.csv`
+      href:     URL.createObjectURL(new Blob([JSON.stringify(out,null,2)],{type:'application/json'})),
+      download: `privisee_x_${selectedSite||'all'}_${Date.now()}.json`
     });
     a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   }
 
   // ── Render all tabs ────────────────────────────────────────────────────────
@@ -440,6 +483,7 @@
     renderCookies($('ckSearch')?.value||'', $('ckSort')?.value||'domain');
     renderTrackers($('trSearch')?.value||'');
     renderAds($('adSearch')?.value||'');
+    renderBlocked($('blSearch')?.value||'');
   }
 
   // ── Graph Panel ───────────────────────────────────────────────
@@ -554,9 +598,16 @@
       renderAll(lastHistory);
     });
 
+    // Global search bar
+    $('globalSearch')?.addEventListener('input', e => {
+      globalSearch = e.target.value.toLowerCase().trim();
+      renderSites(globalSearch); renderTrackers(globalSearch);
+      renderAds(globalSearch); renderBlocked(globalSearch);
+    });
+
     // Buttons
     $('refreshBtn')?.addEventListener('click', refresh);
-    $('exportBtn') ?.addEventListener('click', exportCSV);
+    $('exportBtn') ?.addEventListener('click', exportJSON);
     $('clearBtn')  ?.addEventListener('click', async () => {
       if (!confirm('Clear ALL PRIVISEE-X data? Cannot be undone.')) return;
       await send({ action: 'CLEAR_ALL' });
@@ -587,6 +638,12 @@
     $('ckSort')    ?.addEventListener('change',() => renderCookies($('ckSearch').value, $('ckSort').value));
     $('trSearch')  ?.addEventListener('input', e => renderTrackers(e.target.value));
     $('adSearch')  ?.addEventListener('input', e => renderAds(e.target.value));
+    $('blSearch')  ?.addEventListener('input', e => renderBlocked(e.target.value));
+    $('showFullURLs')?.addEventListener('change', e => { showFullURLs=e.target.checked; renderBlocked($('blSearch')?.value||''); });
+    $('clearBlockedBtn')?.addEventListener('click', async () => {
+      if (!confirm('Clear the entire Firewall Log? This cannot be undone.')) return;
+      await send({action:'CLEAR_BLOCKED_REQUESTS'}); allBlocked=[]; renderBlocked('');
+    });
 
     // Attach event delegation for table row buttons
     attachTableDelegation();

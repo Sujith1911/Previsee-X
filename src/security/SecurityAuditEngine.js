@@ -1,5 +1,5 @@
 /**
- * PRIVISEE-X v2.0
+ * PRIVISEE-X v3.0
  * Security: SecurityAuditEngine
  * 
  * Audits HTTP security headers and practices.

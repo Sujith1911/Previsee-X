@@ -1,10 +1,10 @@
 /**
- * PRIVISEE-X v2.0
+ * PRIVISEE-X v3.0
  * UI: ResearchMode — Raw Data Collector & JSON Exporter
  *
- * Provides researchers with access to the full internal data snapshot of any
- * site session: behavioral DNA, static score breakdown, threat projection,
- * risk history, tracker graph, and raw stored data for the domain.
+ * Provides researchers access to a full internal data snapshot:
+ * behavioral DNA, static score breakdown, threat projection,
+ * risk history, tracker graph, firewall blocked log, and raw headers.
  *
  * Exports clean JSON file via browser download.
  */
@@ -28,10 +28,11 @@
 
   // ── Collect Full Research Snapshot ─────────────────────────────────────────
   async function collectSnapshot() {
-    const [tabRes, graphRes, histRes] = await Promise.all([
+    const [tabRes, graphRes, histRes, blRes] = await Promise.all([
       msg({ action: 'GET_RESEARCH_DATA' }),
       msg({ action: 'GET_GRAPH_DATA' }),
-      msg({ action: 'GET_RISK_HISTORY', hours: 168 }) // 7 days
+      msg({ action: 'GET_RISK_HISTORY', hours: 168 }), // 7 days
+      msg({ action: 'GET_BLOCKED_REQUESTS', limit: 500 })
     ]);
 
     const domain = tabRes.domain || 'unknown';
@@ -41,20 +42,31 @@
       .filter(h => h.domain === domain)
       .sort((a, b) => a.timestamp - b.timestamp);
 
+    const blockedForDomain = (blRes.blocked || [])
+      .filter(b => b.domain === domain || b.domain.includes(domain));
+
     return {
       meta: {
         exportedAt:   new Date().toISOString(),
-        tool:         'PRIVISEE-X v2.0',
+        tool:         'PRIVISEE-X v3.0',
         domain,
-        capturedUrl:  tabRes.capturedUrl || `https://${domain}`
+        capturedUrl:  `https://${domain}`
       },
       riskSummary: {
-        riskScore:       tabRes.riskScore        ?? null,
-        staticScore:     tabRes.staticScore      ?? null,
-        behavioralScore: tabRes.behavioralScore  ?? null,
-        reputationScore: tabRes.reputationScore  ?? null,
-        staticBreakdown: tabRes.staticBreakdown  || [],
-        rawHeaders:      tabRes.rawHeaders       || {}
+        riskScore:          tabRes.riskScore          ?? null,
+        currentSessionRisk: tabRes.currentSessionRisk ?? null,
+        historicalRisk:     tabRes.historicalRisk     ?? null,
+        staticScore:        tabRes.staticScore        ?? null,
+        behavioralScore:    tabRes.behavioralScore    ?? null,
+        reputationScore:    tabRes.reputationScore    ?? null,
+        staticBreakdown:    tabRes.staticBreakdown    || [],
+        rawHeaders:         tabRes.rawHeaders         || {}
+      },
+      firewallSummary: {
+        adsBlockedTotal:      tabRes.adsBlockedCount      || 0,
+        trackersBlockedTotal: tabRes.trackersBlockedCount || 0,
+        blockedForDomain,
+        strictMode:           tabRes.strictMode || false
       },
       behavioralDNA: {
         hash:              tabRes.dnaHash             || null,

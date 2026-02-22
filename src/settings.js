@@ -6,23 +6,24 @@
 // Default configuration
 const DEFAULT_CONFIG = {
   weights: {
-    tracker: 0.25,
-    cookie: 0.20,
-    fingerprint: 0.20,
+    tracker: 0.40,
+    cookie: 0.10,
+    fingerprint: 0.10,
     anomaly: 0.10,
-    thirdParty: 0.10
+    thirdParty: 0.05
   },
   features: {
     trackerDetection: true,
     fingerprintDetection: true,
     anomalyDetection: true,
     graphIntelligence: true,
-    staticIntelligence: true,   // v2.0: Static score via onHeadersReceived
-    threatProjection: true,     // v2.0: 30-day risk projection
-    researchMode: false,        // v2.0: Research mode (raw data export)
+    staticIntelligence: true,
+    threatProjection: true,
+    researchMode: false,
+    strictMode: false,
     federatedLearning: false
   },
-  retentionDays: 7
+  retentionDays: 30
 };
 
 // Current configuration
@@ -96,6 +97,8 @@ function updateDisplay() {
   document.getElementById('toggleStaticIntelligence').checked = currentConfig.features.staticIntelligence ?? true;
   document.getElementById('toggleThreatProjection').checked  = currentConfig.features.threatProjection ?? true;
   document.getElementById('toggleResearchMode').checked      = currentConfig.features.researchMode ?? false;
+  const strictEl = document.getElementById('toggleStrictMode');
+  if (strictEl) strictEl.checked = currentConfig.features.strictMode ?? false;
   document.getElementById('toggleFederatedLearning').checked = currentConfig.features.federatedLearning;
 
   // Retention
@@ -154,6 +157,7 @@ function setupEventListeners() {
     { id: 'toggleStaticIntelligence', key: 'staticIntelligence' },
     { id: 'toggleThreatProjection',   key: 'threatProjection' },
     { id: 'toggleResearchMode',       key: 'researchMode' },
+    { id: 'toggleStrictMode',         key: 'strictMode' },
     { id: 'toggleFederatedLearning',  key: 'federatedLearning' }
   ];
 
@@ -162,9 +166,13 @@ function setupEventListeners() {
     if (!el) return;
     el.addEventListener('change', async (e) => {
       currentConfig.features[toggle.key] = e.target.checked;
-      // Mirror research mode into chrome.storage.local for popup access
       if (toggle.key === 'researchMode') {
         await chrome.storage.local.set({ researchModeEnabled: e.target.checked });
+      }
+      // Sync strictMode to background
+      if (toggle.key === 'strictMode') {
+        await chrome.runtime.sendMessage({ action: 'SET_STRICT_MODE', enabled: e.target.checked });
+        await chrome.storage.local.set({ strictMode: e.target.checked });
       }
       await saveSettings();
     });
@@ -205,9 +213,9 @@ function setupEventListeners() {
  */
 async function exportData() {
   try {
+    // Use GET_DASHBOARD_DATA which returns all sites
     const response = await chrome.runtime.sendMessage({
-      type: 'GET_ALL_SITES',
-      limit: 10000
+      action: 'GET_DASHBOARD_DATA'
     });
 
     if (!response || !response.success) {
@@ -215,22 +223,21 @@ async function exportData() {
       return;
     }
 
-    const exportData = {
-      version: '2.0.0',
+    const exportPayload = {
+      version: '3.0.0',
       exportDate: new Date().toISOString(),
       config: currentConfig,
-      sites: response.sites,
+      sites: response.sites || [],
       metadata: {
-        totalSites: response.sites.length,
-        totalTrackers: response.sites.reduce((sum, s) => sum + (s.trackerCount || 0), 0)
+        totalSites: (response.sites||[]).length,
+        totalTrackers: (response.sites||[]).reduce((s, x) => s + (x.trackerCount || 0), 0),
+        adsBlockedTotal: response.adsBlockedCount || 0,
+        trackersBlockedTotal: response.trackersBlockedCount || 0
       }
     };
 
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { 
-      type: 'application/json' 
-    });
+    const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    
     const a = document.createElement('a');
     a.href = url;
     a.download = `privisee-export-${Date.now()}.json`;
@@ -238,7 +245,6 @@ async function exportData() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-
     showNotification('Data exported successfully!', 'success');
   } catch (error) {
     console.error('[Settings] Export error:', error);
@@ -341,19 +347,16 @@ async function clearAllData() {
 
   try {
     const response = await chrome.runtime.sendMessage({
-      type: 'CLEAR_ALL'
+      action: 'CLEAR_ALL'
     });
 
     if (response && response.success) {
-      // Also clear local settings
+      // Preserve strictMode and trustedDomains settings, only clear data
+      const kept = await chrome.storage.local.get(['strictMode','trustedDomains']);
       await chrome.storage.local.clear();
-      
+      if (Object.keys(kept).length) await chrome.storage.local.set(kept);
       showNotification('All data cleared successfully', 'success');
-      
-      // Reload page after 1 second
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
+      setTimeout(() => window.location.reload(), 1000);
     } else {
       showNotification('Error clearing data', 'error');
     }
