@@ -234,6 +234,17 @@
     .factor .icon{font-size:11px;width:14px;text-align:center;flex-shrink:0;}
     .factor .text{flex:1;font-size:11px;color:var(--text);}
     .factor .delta{font-size:10px;font-weight:700;color:var(--orange);flex-shrink:0;}
+    /* ── Toast fade-in animation ──────────────────────────────── */
+    @keyframes fadeInUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+    /* ── Risk Delta Badge  ─────────────────────────────────────── */
+    #riskDeltaBadge{font-size:9px;font-weight:700;background:var(--s3);border-radius:4px;
+                    padding:1px 5px;margin-top:2px;display:none;}
+    #riskClassification{font-size:8px;color:var(--muted);margin-top:2px;text-align:center;}
+
+    /* ── Sparkline range buttons ───────────────────────────────── */
+    .sparkline-range-btn{padding:2px 7px;border-radius:4px;font-size:8px;font-weight:700;
+                          cursor:pointer;border:1px solid var(--border);letter-spacing:.3px;transition:all .15s;}
   </style>
 </head>
 <body>
@@ -272,6 +283,8 @@
     <div class="wa-score-ring" id="waRing" style="border-color:var(--safe);">
       <div class="num" id="riskScore" style="color:var(--safe);">—</div>
       <div class="lbl">RISK</div>
+      <div id="riskDeltaBadge"></div>
+      <div id="riskClassification"></div>
     </div>
   </div>
 
@@ -311,12 +324,20 @@
     </div>
     <!-- Historical Risk Sparkline -->
     <div class="sparkline-row">
-      <div class="sparkline-lbl">📈 Risk history
-        <span style="margin-left:auto;font-size:9px;color:var(--muted);" id="sparklineLabel"></span>
+      <div class="sparkline-lbl" style="justify-content:space-between;">
+        <span>📈 Risk history</span>
+        <span style="display:flex;gap:4px;align-items:center;">
+          <span style="font-size:9px;color:var(--muted);" id="sparklineAvg"></span>
+          <button class="sparkline-range-btn" data-range="today" style="background:var(--acc);color:white;">Today</button>
+          <button class="sparkline-range-btn" data-range="7d" style="background:var(--s3);color:var(--muted);">7D</button>
+          <button class="sparkline-range-btn" data-range="30d" style="background:var(--s3);color:var(--muted);">30D</button>
+          <button class="sparkline-range-btn" data-range="all" style="background:var(--s3);color:var(--muted);">All</button>
+        </span>
       </div>
       <div class="sparkline-wrap">
         <canvas id="sparkline" height="40"></canvas>
       </div>
+      <div style="font-size:9px;color:var(--muted);margin-top:2px;" id="sparklineLabel"></div>
     </div>
   </div>
 
@@ -461,7 +482,7 @@
   </div>
 
   <!-- Action Buttons -->
-  <div class="actions">
+  <div class="actions" id="actionBtns">
     <button class="btn btn-trust" id="trustBtn">🤝 Trust Site</button>
     <button class="btn btn-del" id="deleteCookiesBtn">🍪 Delete Cookies</button>
     <button class="btn btn-dash" id="dashboardBtn">📊 Dashboard</button>
@@ -531,6 +552,8 @@
 
 </div><!-- /content -->
 
+<script src="core/StateManager.js"></script>
+<script src="risk/SmartSuggestionEngine.js"></script>
 <script src="ui/PopupController.js"></script>
 </body>
 </html>

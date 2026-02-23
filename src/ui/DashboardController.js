@@ -1,14 +1,15 @@
 /**
- * PRIVISEE-X v4.0 — DashboardController
+ * PRIVISEE-X v5.0 — DashboardController
  *
  * Features:
  *  - Global site filter bar — applies to ALL tabs simultaneously
+ *  - Advanced filters: Risk Level, Date Range, Certificate Status, Trusted/Untrusted
  *  - Blocked Ads tab + Firewall Log tab (blocked requests with full URL toggle)
  *  - Global real-time search across all tabs
  *  - Cookie delete per-row + Delete All Cookies for Site
  *  - Tracker delete per-row + Delete All Trackers for Site
  *  - Sites tab with full stats + delete/whitelist per site
- *  - Risk timeline chart
+ *  - Risk timeline chart with range filtering + improved tooltips
  *  - Export JSON (full analytics)
  */
 (function () {
@@ -26,6 +27,14 @@
   let globalSearch  = '';
   let adsBlockedTotal      = 0;
   let trackersBlockedTotal = 0;
+
+  // v5.0 Advanced filter state
+  let activeRiskLevel   = 'all';  // all | safe | moderate | high | critical
+  let activeDateRange   = 'all';  // all | today | 7d | 30d
+  let showTrustedOnly   = false;
+  let activeChartRange  = '24h';  // 24h | 7d | 30d | all
+  let activeCertFilter  = 'all';  // all | clean | warning | invalid
+  let lastHistory       = [];
 
   // ── Messenger ──────────────────────────────────────────────────────────────
   function send(payload) {
@@ -78,11 +87,12 @@
 
   // ── Fetch ───────────────────────────────────────────────────────────────────
   async function fetchAll() {
+    const hours = activeChartRange === '7d' ? 168 : activeChartRange === '30d' ? 720 : activeChartRange === 'all' ? 876000 : 24;
     const [dash, ck, tr, hist, bl] = await Promise.all([
       send({ action: 'GET_DASHBOARD_DATA' }),
       send({ action: 'GET_ALL_COOKIES', domain: selectedSite || undefined }),
       send({ action: 'GET_TRACKERS_FOR_SITE', siteDomain: selectedSite || undefined }),
-      send({ action: 'GET_RISK_HISTORY', hours: 24 }),
+      send({ action: 'GET_RISK_HISTORY', hours }),
       send({ action: 'GET_BLOCKED_REQUESTS', limit: 500 })
     ]);
     allSites      = (dash?.sites || []).filter(s => s.domain && s.domain !== '__whitelist__');
@@ -91,7 +101,8 @@
     allBlocked    = bl?.blocked  || [];
     adsBlockedTotal      = bl?.adsBlockedCount      || dash?.adsBlockedCount      || 0;
     trackersBlockedTotal = bl?.trackersBlockedCount || dash?.trackersBlockedCount || 0;
-    return hist?.history || [];
+    lastHistory          = hist?.history || [];
+    return lastHistory;
   }
 
   // ── Global site-filter selector ────────────────────────────────────────────
@@ -197,20 +208,52 @@
   }
 
   // ── Sites tab ───────────────────────────────────────────────────────────────
+  // ── Sites tab (v5.0: multi-criteria filter) ──────────────────────────────────
   function renderSites(q = '') {
     try {
       const tbody = $('sitesBody');
       const fl    = q.toLowerCase();
-      const rows  = allSites
-        .filter(s => (!selectedSite || s.domain === selectedSite) && (!fl || s.domain.toLowerCase().includes(fl)))
+
+      // Date cutoff for activeDateRange filter
+      let dateCutoff = 0;
+      if      (activeDateRange === 'today') dateCutoff = new Date().setHours(0,0,0,0);
+      else if (activeDateRange === '7d')    dateCutoff = Date.now() - 7*86400000;
+      else if (activeDateRange === '30d')   dateCutoff = Date.now() - 30*86400000;
+
+      const rows = allSites
+        .filter(s => (!selectedSite || s.domain === selectedSite))
+        .filter(s => !fl || s.domain.toLowerCase().includes(fl))
+        // Risk level filter
+        .filter(s => {
+          const sc = s.riskScore || 0;
+          if (activeRiskLevel === 'safe')     return sc <= 15;
+          if (activeRiskLevel === 'moderate') return sc > 15 && sc <= 60;
+          if (activeRiskLevel === 'high')     return sc > 60 && sc <= 80;
+          if (activeRiskLevel === 'critical') return sc > 80;
+          return true; // 'all'
+        })
+        // Date range filter (by lastVisit)
+        .filter(s => !dateCutoff || (s.lastVisit && s.lastVisit >= dateCutoff))
+        // Trusted filter
+        .filter(s => !showTrustedOnly || s.trusted)
+        // Certificate status filter
+        .filter(s => {
+          if (activeCertFilter === 'all') return true;
+          const sev = (s.certSeverity || 'NONE').toUpperCase();
+          if (activeCertFilter === 'clean')   return sev === 'NONE';
+          if (activeCertFilter === 'warning') return sev === 'WARNING';
+          if (activeCertFilter === 'invalid') return sev === 'CRITICAL' || sev === 'ERROR';
+          return true;
+        })
         .sort((a,b) => (b.riskScore||0) - (a.riskScore||0));
 
-      $('siteCnt').textContent = `${rows.length} site${rows.length!==1?'s':''}`;
+      $('siteCnt').textContent = `${rows.length} site${rows.length!==1?'s':''}` +
+        (activeRiskLevel !== 'all' || activeDateRange !== 'all' || activeCertFilter !== 'all' ? ' (filtered)' : '');
 
       if (!rows.length) {
         tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">
           <div class="ico">🌐</div>
-          ${q||selectedSite ? 'No sites match.' : 'No sites yet. Browse some websites, then refresh.'}
+          ${q||selectedSite ? 'No sites match your filters.' : 'No sites yet. Browse some websites, then refresh.'}
         </div></td></tr>`;
         return;
       }
@@ -417,8 +460,26 @@
 
   async function _doWhitelist(domain) {
     await send({ action: 'WHITELIST_DOMAIN', domain });
-    alert(`"${domain}" trusted. That domain will no longer affect your risk score.`);
+    showDashToast(`✅ "${domain}" trusted — domain will no longer affect risk score`, 'success');
     await refresh();
+  }
+
+  // ── Dashboard toast helper ───────────────────────────────────────────────────
+  function showDashToast(message, type = 'success', duration = 2500) {
+    let container = $('dashToastContainer');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'dashToastContainer';
+      container.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:6px;pointer-events:none;';
+      document.body.appendChild(container);
+    }
+    const colors = { success: '#10b981', error: '#ef4444', info: '#6366f1', warning: '#f59e0b' };
+    const icons  = { success: '✅', error: '❌', info: 'ℹ️', warning: '⚠️' };
+    const toast  = document.createElement('div');
+    toast.style.cssText = `background:#1e2438;border:1px solid ${colors[type]}50;color:#e2e8f0;padding:10px 14px;border-radius:8px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:8px;box-shadow:0 4px 24px rgba(0,0,0,.6);pointer-events:auto;border-left:3px solid ${colors[type]};max-width:320px;`;
+    toast.innerHTML = `<span>${icons[type]}</span><span>${message}</span>`;
+    container.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity .3s'; setTimeout(() => toast.remove(), 300); }, duration);
   }
 
   // Keep minimal window. exports for HTML onclick fallback (backwards compat with popup)
@@ -486,7 +547,7 @@
     renderBlocked($('blSearch')?.value||'');
   }
 
-  // ── Graph Panel ───────────────────────────────────────────────
+  // ── Graph Panel (v5.0: zoom/pan + tooltip + risk rings) ──────────
   async function renderGraph() {
     const container = $('graphPanel');
     if (!container) return;
@@ -497,67 +558,123 @@
     }
     const { nodes, links } = resp;
 
-    // Use bundled D3 from src/lib/d3.min.js
     if (typeof d3 === 'undefined') {
       container.innerHTML = '<div class="empty-state">Graph library not loaded. Ensure src/lib/d3.min.js is present.</div>';
       return;
     }
 
     container.innerHTML = '';
+    container.style.position = 'relative';
     const W = container.clientWidth  || 900;
     const H = container.clientHeight || 500;
 
+    // ── Floating tooltip ──────────────────────────────────────────
+    let tip = document.getElementById('graphTooltip');
+    if (!tip) {
+      tip = document.createElement('div');
+      tip.id = 'graphTooltip';
+      tip.style.cssText = 'position:fixed;pointer-events:none;background:#1e2438;border:1px solid rgba(99,102,241,.45);border-radius:8px;padding:8px 12px;font-size:11px;color:#e2e8f0;z-index:9000;display:none;max-width:220px;box-shadow:0 4px 20px rgba(0,0,0,.7);line-height:1.7;';
+      document.body.appendChild(tip);
+    }
+
+    const riskC = s => s >= 75 ? '#ef4444' : s >= 50 ? '#f97316' : s >= 20 ? '#f59e0b' : '#10b981';
+
     const svg = d3.select(container)
       .append('svg').attr('width', W).attr('height', H)
-      .attr('style', 'background:#0f172a;border-radius:8px');
+      .attr('style', 'background:#0f172a;border-radius:8px;cursor:grab;');
 
-    const COLOR = { site: '#6366f1', tracker: '#f97316' };
+    // ── Zoom/pan ───────────────────────────────────────────────────
+    const zoomLayer = svg.append('g');
+    const zoom = d3.zoom().scaleExtent([0.15, 5])
+      .on('zoom', ev => zoomLayer.attr('transform', ev.transform));
+    svg.call(zoom);
+
+    // Zoom controls overlay
+    const ctrlWrap = d3.select(container).append('div')
+      .style('position','absolute').style('top','10px').style('right','10px')
+      .style('display','flex').style('flex-direction','column').style('gap','4px').style('z-index','50');
+    [['＋', () => svg.transition().call(zoom.scaleBy, 1.45)],
+     ['－', () => svg.transition().call(zoom.scaleBy, 0.7)],
+     ['⌂',  () => svg.transition().call(zoom.transform, d3.zoomIdentity)]
+    ].forEach(([label, action]) => {
+      ctrlWrap.append('button').text(label)
+        .style('width','28px').style('height','28px').style('border-radius','6px')
+        .style('border','1px solid rgba(255,255,255,.1)').style('background','rgba(30,36,56,.9)')
+        .style('color','#e2e8f0').style('cursor','pointer').style('font-size','14px')
+        .on('click', action);
+    });
 
     const sim = d3.forceSimulation(nodes)
-      .force('link', d3.forceLink(links).id(d => d.id).distance(120))
-      .force('charge', d3.forceManyBody().strength(-200))
+      .force('link', d3.forceLink(links).id(d => d.id).distance(130))
+      .force('charge', d3.forceManyBody().strength(-260))
       .force('center', d3.forceCenter(W / 2, H / 2))
-      .force('collision', d3.forceCollide(18));
+      .force('collision', d3.forceCollide(22));
 
-    const link = svg.append('g').selectAll('line')
+    // Edges — colour by category
+    const link = zoomLayer.append('g').selectAll('line')
       .data(links).join('line')
-      .attr('stroke', 'rgba(255,255,255,0.15)').attr('stroke-width', d => Math.min(4, Math.sqrt(d.value || 1)));
+      .attr('stroke', d => {
+        const t = (d.category || '').toLowerCase();
+        return t === 'advertising' ? '#ef444455' : t === 'analytics' ? '#f59e0b55' : 'rgba(255,255,255,0.12)';
+      })
+      .attr('stroke-width', d => Math.min(4, Math.sqrt(d.value || 1)));
 
-    const node = svg.append('g').selectAll('g')
+    const nodeG = zoomLayer.append('g').selectAll('g')
       .data(nodes).join('g')
       .call(d3.drag()
-        .on('start', (event, d) => { if (!event.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
-        .on('drag',  (event, d) => { d.fx = event.x; d.fy = event.y; })
-        .on('end',   (event, d) => { if (!event.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
+        .on('start', (ev, d) => { if (!ev.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; })
+        .on('drag',  (ev, d) => { d.fx=ev.x; d.fy=ev.y; })
+        .on('end',   (ev, d) => { if (!ev.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }));
 
-    node.append('circle')
-      .attr('r', d => d.type === 'site' ? 8 : Math.min(18, 6 + Math.log2(d.weight + 1) * 3))
-      .attr('fill', d => COLOR[d.type] || '#64748b')
-      .attr('stroke', '#fff').attr('stroke-width', 1.5);
+    // Risk ring on site nodes
+    nodeG.filter(d => d.type === 'site').append('circle')
+      .attr('r', 14).attr('fill','none')
+      .attr('stroke', d => riskC(d.riskScore || 0))
+      .attr('stroke-width', 2.5).attr('stroke-dasharray','4 2');
 
-    node.append('title').text(d => `${d.id} (${d.type}, weight:${d.weight})`);
+    // Main circle
+    nodeG.append('circle')
+      .attr('r', d => d.type === 'site' ? 10 : Math.min(18, 6 + Math.log2((d.weight||1) + 1) * 3))
+      .attr('fill', d => d.type === 'site' ? '#6366f1' : '#f97316')
+      .attr('stroke','#fff').attr('stroke-width',1.5);
 
-    node.append('text')
-      .text(d => d.id.length > 20 ? d.id.substring(0, 18) + '…' : d.id)
-      .attr('fill', '#94a3b8').attr('font-size', '10px').attr('dy', 20).attr('text-anchor', 'middle');
+    // Label
+    nodeG.append('text')
+      .text(d => d.id.length > 22 ? d.id.substring(0,20)+'\u2026' : d.id)
+      .attr('fill','#94a3b8').attr('font-size','9px')
+      .attr('dy', d => d.type === 'site' ? 28 : 24).attr('text-anchor','middle');
+
+    // Tooltip events
+    nodeG.on('mouseenter', (ev, d) => {
+        const sc = d.riskScore != null ? d.riskScore : null;
+        tip.innerHTML = [
+          `<strong style="color:${d.type==='site'?'#818cf8':'#fb923c'}">${d.id}</strong>`,
+          `<span style="color:#64748b;font-size:10px;text-transform:uppercase">${d.type}</span>`,
+          d.weight  ? `Connections: <strong>${d.weight}</strong>`  : '',
+          sc != null ? `Risk: <strong style="color:${riskC(sc)}">${sc}</strong>` : '',
+          d.category ? `Category: <em>${d.category}</em>` : '',
+        ].filter(Boolean).join('<br>');
+        tip.style.display='block';
+      })
+      .on('mousemove', ev => { tip.style.left=(ev.clientX+14)+'px'; tip.style.top=(ev.clientY-10)+'px'; })
+      .on('mouseleave', () => { tip.style.display='none'; });
 
     sim.on('tick', () => {
-      link
-        .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
-        .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
-      node.attr('transform', d => `translate(${d.x},${d.y})`);
+      link.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y)
+          .attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+      nodeG.attr('transform', d=>`translate(${d.x},${d.y})`);
     });
 
     // Legend
-    const legend = svg.append('g').attr('transform', 'translate(16,16)');
-    [['#6366f1', 'Site'], ['#f97316', 'Tracker']].forEach(([color, label], i) => {
-      legend.append('circle').attr('cx', 8).attr('cy', i * 20).attr('r', 6).attr('fill', color);
-      legend.append('text').attr('x', 18).attr('y', i * 20 + 4).attr('fill', '#94a3b8').attr('font-size', '12px').text(label);
-    });
+    const lg = svg.append('g').attr('transform','translate(16,16)');
+    [['#6366f1','Visited Site'],['#f97316','Tracker Hub'],['#10b981','Low Risk ◎'],['#ef4444','Critical ◎']]
+      .forEach(([color,label],i)=>{
+        lg.append('circle').attr('cx',8).attr('cy',i*20).attr('r',6).attr('fill',color);
+        lg.append('text').attr('x',18).attr('y',i*20+4).attr('fill','#94a3b8').attr('font-size','11px').text(label);
+      });
   }
 
   // ── Refresh ────────────────────────────────────────────────────────────────
-  let lastHistory = [];
   async function refresh() {
     const btn = $('refreshBtn');
     if (btn) { btn.textContent='⏳'; btn.disabled=true; }
@@ -621,7 +738,7 @@
       if (!confirm(`Delete ALL cookies for "${selectedSite}"?`)) return;
       const r = await send({ action: 'DELETE_ALL_COOKIES_FOR_SITE', domain: selectedSite });
       await refresh();
-      alert(`Removed ${r?.removed||'?'} cookies for ${selectedSite}.`);
+      showDashToast(`🍪 Removed ${r?.removed||'?'} cookies for ${selectedSite}`, 'success');
     });
     $('deleteAllTrackersForSite')?.addEventListener('click', async () => {
       if (!selectedSite) return;
@@ -647,6 +764,41 @@
 
     // Attach event delegation for table row buttons
     attachTableDelegation();
+
+    // ── Advanced filter controls (v5.0) ─────────────────────────────────
+    $('filterRiskLevel')?.addEventListener('change', e => {
+      activeRiskLevel = e.target.value;
+      renderSites($('siteSearch')?.value || '');
+    });
+    $('filterDateRange')?.addEventListener('change', e => {
+      activeDateRange = e.target.value;
+      renderSites($('siteSearch')?.value || '');
+    });
+    $('filterTrustedOnly')?.addEventListener('change', e => {
+      showTrustedOnly = e.target.checked;
+      renderSites($('siteSearch')?.value || '');
+    });
+    $('filterChartRange')?.addEventListener('change', async e => {
+      activeChartRange = e.target.value;
+      lastHistory = await fetchAll();
+      renderChart(lastHistory);
+    });
+    $('filterCertStatus')?.addEventListener('change', e => {
+      activeCertFilter = e.target.value;
+      renderSites($('siteSearch')?.value || '');
+    });
+    // Reset all advanced filters
+    $('resetFiltersBtn')?.addEventListener('click', () => {
+      activeRiskLevel  = 'all';
+      activeDateRange  = 'all';
+      showTrustedOnly  = false;
+      activeCertFilter = 'all';
+      if ($('filterRiskLevel'))   $('filterRiskLevel').value   = 'all';
+      if ($('filterDateRange'))   $('filterDateRange').value   = 'all';
+      if ($('filterTrustedOnly')) $('filterTrustedOnly').checked = false;
+      if ($('filterCertStatus'))  $('filterCertStatus').value  = 'all';
+      renderSites($('siteSearch')?.value || '');
+    });
 
     // Graph tab — render when tab is clicked
     document.querySelectorAll('.tab-btn').forEach(b => {

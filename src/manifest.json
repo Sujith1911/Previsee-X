@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PRIVISEE-X",
-  "version": "4.0.0",
-  "description": "PRIVISEE-X v4.0 — WebAdvisor Mode: Certificate Warning Engine, Predictive Risk Advisor, Explainable Privacy Firewall, DNS-level Ad Blocking. 100% local, zero data transmission.",
+  "version": "5.0.0",
+  "description": "PRIVISEE-X v5.0 — WebAdvisor Mode: Certificate Warning Engine, Predictive Risk Advisor, Explainable Privacy Firewall, Advanced Filters, D3 Tracker Graph, Smart Suggestions. 100% local, zero data transmission.",
   "permissions": [
     "storage",
     "cookies",

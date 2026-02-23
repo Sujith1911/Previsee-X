@@ -127,7 +127,7 @@
 
 <!-- Header -->
 <header class="hdr">
-  <div class="brand"><h1>🛡️ PRIVISEE-X</h1><p id="lastUpdated">Privacy Intelligence Dashboard v4.0 — WebAdvisor Mode</p></div>
+  <div class="brand"><h1>🛡️ PRIVISEE-X</h1><p id="lastUpdated">Privacy Intelligence Dashboard v5.0 — Advanced Filters Mode</p></div>
   <div class="hdr-right">
     <span class="live">● LIVE</span>
     <input class="srch" id="globalSearch" type="text" placeholder="🔎 Search domains, trackers, blocked…" style="width:220px">
@@ -145,6 +145,36 @@
   </select>
   <button id="clearFilter">✕ Clear filter</button>
   <span id="filterInfo" style="font-size:12px;color:var(--muted)"></span>
+</div>
+
+<!-- Advanced filter bar (v5.0) -->
+<div class="sitefilter-bar" style="gap:8px;flex-wrap:wrap;border-top:none;padding-top:6px;">
+  <label style="font-size:11px;color:var(--muted)">Risk Level:</label>
+  <select class="site-sel" id="filterRiskLevel" style="min-width:140px;font-size:12px;padding:5px 9px;">
+    <option value="all">All Levels</option>
+    <option value="safe">Safe (0–15)</option>
+    <option value="moderate">Moderate (16–60)</option>
+    <option value="high">High (61–80)</option>
+    <option value="critical">Critical (81+)</option>
+  </select>
+  <label style="font-size:11px;color:var(--muted)">Date:</label>
+  <select class="site-sel" id="filterDateRange" style="min-width:130px;font-size:12px;padding:5px 9px;">
+    <option value="all">All Time</option>
+    <option value="today">Today</option>
+    <option value="7d">Last 7 Days</option>
+    <option value="30d">Last 30 Days</option>
+  </select>
+  <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px;cursor:pointer;">
+    <input type="checkbox" id="filterTrustedOnly"> Trusted only
+  </label>
+  <label style="font-size:11px;color:var(--muted)">Cert:</label>
+  <select class="site-sel" id="filterCertStatus" style="min-width:130px;font-size:12px;padding:5px 9px;">
+    <option value="all">All Certs</option>
+    <option value="clean">✅ Clean</option>
+    <option value="warning">⚠️ Warning</option>
+    <option value="invalid">🚫 Invalid</option>
+  </select>
+  <button id="resetFiltersBtn" style="font-size:11px;color:var(--acc);background:transparent;border:none;cursor:pointer;padding:0;text-decoration:underline;">↺ Reset filters</button>
 </div>
 
 <main class="main">
@@ -168,7 +198,18 @@
 
   <!-- Risk chart -->
   <div class="graph-card">
-    <h3>📈 Risk Timeline — Today</h3>
+    <h3 style="display:flex;align-items:center;justify-content:space-between;">
+      <span>📈 Risk Timeline</span>
+      <span style="display:flex;align-items:center;gap:6px;">
+        <label style="font-size:10px;color:var(--muted);font-weight:600;">Range:</label>
+        <select class="mini-sel" id="filterChartRange" style="font-size:11px;padding:3px 7px;">
+          <option value="24h">Today (24h)</option>
+          <option value="7d">Last 7 Days</option>
+          <option value="30d">Last 30 Days</option>
+          <option value="all">All Time</option>
+        </select>
+      </span>
+    </h3>
     <canvas id="riskChart"></canvas>
     <div id="chartMsg" style="text-align:center;color:var(--muted);font-size:12px;display:none;padding-top:8px">
       No browsing data yet. Browse websites then refresh.

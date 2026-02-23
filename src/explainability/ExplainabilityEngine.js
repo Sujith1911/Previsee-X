@@ -1,5 +1,5 @@
 /**
- * PRIVISEE-X v4.0 — ExplainabilityEngine
+ * PRIVISEE-X v5.0 — ExplainabilityEngine
  * WebAdvisor Mode: Explainable Risk Breakdown
  *
  * Demystifies the v4.0 risk score by:

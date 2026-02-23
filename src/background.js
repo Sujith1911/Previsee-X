@@ -1,7 +1,8 @@
 /**
- * PRIVISEE-X v4.0 — Background Service Worker
+ * PRIVISEE-X v5.0 — Background Service Worker
  * WebAdvisor Mode + Privacy Firewall + Behavioral Risk Engine
  * Certificate Warning Engine + Security Layer Analysis
+ * Central State Management + Risk Delta Engine + Advanced Filters
  */
 
 import { storageManager } from './storage/StorageManager.js';
@@ -87,6 +88,9 @@ const blockedLog = [];
 
 // Per-tab debounce timestamps
 const riskDebounce = {};
+
+// Tracker dedup: key -> timestamp of last log (5s window)
+const trackerLastLog = {};
 
 function log(msg,  ...a) { console.log('[PRIVISEE-X BG]', msg, ...a); }
 function warn(msg, ...a) { console.warn('[PRIVISEE-X BG]', msg, ...a); }
@@ -279,7 +283,16 @@ function getWebAdvisorStatus(score) {
   return 'DANGEROUS';
 }
 
-// ── Multi-Layer Risk Calculation (v4.0: 35/30/20/15 weights) ──────────────────
+// ── Risk Classification Label ─────────────────────────────────────────────────
+function getRiskClassification(score) {
+  if (score <= 15) return 'Safe';
+  if (score <= 35) return 'Low Risk';
+  if (score <= 60) return 'Moderate Risk';
+  if (score <= 80) return 'High Risk';
+  return 'Critical';
+}
+
+// ── Multi-Layer Risk Calculation (v5.0: 35/30/20/15 weights + Risk Delta) ─────
 async function calcRisk(tabId, domain) {
   const s  = getTabStats(tabId);
   const bh = getTabBehavior(tabId);
@@ -307,15 +320,27 @@ async function calcRisk(tabId, domain) {
     ((s.trackerCount||0)>0?Math.min(50,(s.trackerCount||0)*5):0)+reputBoost
   ));
 
-  // Historical risk for this domain
-  let userHistory=0;
+  // Historical risk for this domain + risk delta calculation
+  let userHistory = 0;
+  let riskDelta   = 0;   // positive = risk increased, negative = improved
+  let avg7d       = 0;
   try {
-    const hist=await storageManager.getRiskHistorySince(Date.now()-30*86400000);
-    const dh=(hist||[]).filter(h=>h.domain===domain).slice(-10);
-    if (dh.length) userHistory=Math.round(dh.reduce((a,h)=>a+h.score,0)/dh.length);
+    const hist = await storageManager.getRiskHistorySince(Date.now()-30*86400000);
+    const dh   = (hist||[]).filter(h=>h.domain===domain).sort((a,b)=>a.timestamp-b.timestamp);
+    if (dh.length) {
+      userHistory = Math.round(dh.reduce((a,h)=>a+h.score,0)/dh.length);
+      // Last visit score for delta
+      const lastVisitScore = dh[dh.length-1]?.score || 0;
+      // 7-day average
+      const cutoff7d = Date.now() - 7*86400000;
+      const dh7d = dh.filter(h=>h.timestamp>=cutoff7d);
+      avg7d = dh7d.length ? Math.round(dh7d.reduce((a,h)=>a+h.score,0)/dh7d.length) : 0;
+      // Delta will be computed vs last visit after final score is known
+      s._lastVisitScore = lastVisitScore;
+    }
   } catch {}
 
-  // v4.0 weights: 0.35 Behavioral + 0.30 Static + 0.20 Reputation + 0.15 SecurityLayer
+  // v5.0 weights: 0.35 Behavioral + 0.30 Static + 0.20 Reputation + 0.15 SecurityLayer
   let final=Math.round(Math.min(100,Math.max(0,
     0.35*behavioral+0.30*staticScore+0.20*reputation+0.15*securityLayerRisk
   )));
@@ -323,7 +348,13 @@ async function calcRisk(tabId, domain) {
   // Certificate invalid → force minimum risk 70
   if (certWarning?.isInvalid && final < 70) final = 70;
 
-  const level=final>=75?'CRITICAL':final>=50?'HIGH':final>=20?'MODERATE':'LOW';
+  // Risk Delta: compare current score vs last visit
+  if (s._lastVisitScore !== undefined) {
+    riskDelta = final - (s._lastVisitScore || 0);
+  }
+
+  const level = final>=75?'CRITICAL':final>=50?'HIGH':final>=20?'MODERATE':'LOW';
+  const classification = getRiskClassification(final);
   const webAdvisorStatus = getWebAdvisorStatus(final);
 
   // Store scores (always — trust only affects display)
@@ -336,9 +367,12 @@ async function calcRisk(tabId, domain) {
   s.historicalRisk     = userHistory;
   s.riskScore          = final;
   s.riskLevel          = level;
+  s.riskClassification = classification;
+  s.riskDelta          = riskDelta;
+  s.avg7d              = avg7d;
   s.webAdvisorStatus   = webAdvisorStatus;
 
-  return { score:final, level, behavioral, staticScore, reputation, userHistory, securityLayerRisk, secHeaderScore, webAdvisorStatus };
+  return { score:final, level, classification, behavioral, staticScore, reputation, userHistory, securityLayerRisk, secHeaderScore, webAdvisorStatus, riskDelta, avg7d };
 }
 
 // ── Debounced Risk Update ─────────────────────────────────────────────────────
@@ -478,6 +512,7 @@ async function updateSiteStats(domain, delta) {
     if (delta.fingerprintCount!=null) curr.fingerprintCount=(curr.fingerprintCount||0)+delta.fingerprintCount;
     if (delta.riskScore!==undefined)  curr.riskScore       =delta.riskScore;
     if (delta.riskLevel!==undefined)  curr.riskLevel       =delta.riskLevel;
+    if (delta.certSeverity!==undefined) curr.certSeverity  =delta.certSeverity;
     curr.lastVisit=Date.now();
     await storageManager.put('sites',curr);
   } catch(e) { warn('updateSiteStats:',e.message); }
@@ -486,11 +521,15 @@ async function updateSiteStats(domain, delta) {
 async function addTrackerEntry(siteDomain, trackerDomain) {
   if (!siteDomain||!trackerDomain) return;
   try {
-    const key=`${siteDomain}::${trackerDomain}`;
-    const curr=await storageManager.get('trackers',key)||{ id:key, siteDomain, trackerDomain, count:0, firstSeen:Date.now() };
+    const key = `${siteDomain}::${trackerDomain}`;
+    // Dedup: skip if same tracker logged within 5 seconds
+    const now = Date.now();
+    if (trackerLastLog[key] && (now - trackerLastLog[key]) < 5000) return;
+    trackerLastLog[key] = now;
+    const curr = await storageManager.get('trackers',key) || { id:key, siteDomain, trackerDomain, count:0, firstSeen:now };
     curr.count++;
-    curr.lastSeen=Date.now();
-    await storageManager.put('trackers',curr);
+    curr.lastSeen = now;
+    await storageManager.put('trackers', curr);
   } catch {}
 }
 
@@ -627,6 +666,10 @@ function setupListeners() {
       if (!s.domain) s.domain=domain;
       s.certWarning=certWarning;
       await updateRisk(details.tabId);
+      // Persist certSeverity so the dashboard cert-status filter can read it from stored site records
+      if (domain && certWarning) {
+        await updateSiteStats(domain, { certSeverity: certWarning.severity||'NONE' });
+      }
     },
     { urls:['<all_urls>'] },
     ['responseHeaders']
@@ -684,6 +727,8 @@ function setupListeners() {
 
     // Force risk update — will set riskScore >= 70 due to isInvalid
     await updateRisk(tabId);
+    // Persist certSeverity to site record so dashboard cert-status filter works
+    await updateSiteStats(domain, { certSeverity: certWarning.severity||'CRITICAL' });
 
     // Show overlay immediately via scripting (page is Chrome's error page, content.js not injected)
     // Only show if not dismissed
@@ -809,13 +854,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         stats.trustOverride=trusted;
         const sc=tabStaticCache[tab.id]||{};
         const effectiveScore = trusted ? 0 : stats.riskScore;
+        const effectiveDelta = trusted ? 0 : (stats.riskDelta || 0);
         sendResponse({
           domain,
-          riskScore:         effectiveScore,
-          riskLevel:         trusted?'LOW':stats.riskLevel,
-          webAdvisorStatus:  trusted?'SAFE': getWebAdvisorStatus(effectiveScore),
-          currentSessionRisk:stats.currentSessionRisk,
-          historicalRisk:    stats.historicalRisk,
+          riskScore:          effectiveScore,
+          riskLevel:          trusted?'LOW':stats.riskLevel,
+          riskClassification: trusted?'Safe':(stats.riskClassification||getRiskClassification(effectiveScore)),
+          riskDelta:          effectiveDelta,
+          avg7d:              trusted?0:(stats.avg7d||0),
+          webAdvisorStatus:   trusted?'SAFE': getWebAdvisorStatus(effectiveScore),
+          currentSessionRisk: stats.currentSessionRisk,
+          historicalRisk:     stats.historicalRisk,
           trusted, trustOverride:trusted,
           trackerCount:    stats.trackerCount,
           cookieCount,
@@ -874,10 +923,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const domain=(message.domain||'').replace(/^\./,'')||
           (()=>{ try{return clean(new URL(message.url).hostname);}catch{return '';} })();
         await deleteCookieAndStorage(message.name,message.url,domain);
-        // Refresh risk after cookie deletion
+        // Refresh risk + push stats update after cookie deletion
         try {
           const tabs=await chrome.tabs.query({ active:true, currentWindow:true });
-          if (tabs[0]) { riskDebounce[tabs[0].id]=0; await updateRisk(tabs[0].id); }
+          if (tabs[0]) {
+            const tabId = tabs[0].id;
+            riskDebounce[tabId]=0;
+            await updateRisk(tabId);
+            // Force cookie count refresh in tab stats
+            const s=getTabStats(tabId);
+            if (s.domain) {
+              try { s.cookieCount=(await chrome.cookies.getAll({domain:s.domain}))?.length||0; } catch {}
+            }
+            // Push update to popup
+            try { await chrome.runtime.sendMessage({ type:'STATS_UPDATE', tabId, domain }); } catch {}
+          }
         } catch {}
         sendResponse({success:true});
       }
@@ -897,7 +957,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               if (!clean(new URL(tab.url).hostname).includes(clean(message.domain))) continue;
               await chrome.scripting.executeScript({ target:{tabId:tab.id},
                 func:()=>{ try{localStorage.clear();sessionStorage.clear();}catch{} } });
-              riskDebounce[tab.id]=0; await updateRisk(tab.id);
+              // Reset cookie count in tab stats
+              const s=getTabStats(tab.id);
+              s.cookieCount=0;
+              riskDebounce[tab.id]=0;
+              await updateRisk(tab.id);
+              // Push update to popup
+              try { await chrome.runtime.sendMessage({ type:'STATS_UPDATE', tabId:tab.id, domain:message.domain }); } catch {}
             } catch {}
           }
         } catch {}
@@ -916,6 +982,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({history:history||[],success:true});
       }
 
+      // Filtered history by range: today | 7d | 30d | all
+      else if (action==='GET_RISK_HISTORY_FILTERED') {
+        let history=[];
+        try {
+          const range = message.range || 'today';
+          let since;
+          if      (range==='today') since = new Date().setHours(0,0,0,0);
+          else if (range==='7d')    since = Date.now()-7*86400000;
+          else if (range==='30d')   since = Date.now()-30*86400000;
+          else                       since = 0; // 'all'
+          const all = await storageManager.getRiskHistorySince(since);
+          history = message.domain
+            ? (all||[]).filter(h=>h.domain===message.domain)
+            : (all||[]);
+        } catch {}
+        sendResponse({history:history||[],success:true});
+      }
+
       else if (action==='GET_BLOCKED_REQUESTS') {
         let blocked=[];
         try { blocked=await storageManager.getBlockedRequests(message.limit||200); } catch {}
@@ -925,6 +1009,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       else if (action==='CLEAR_BLOCKED_REQUESTS') {
         try { await storageManager.clearBlockedRequests(); blockedLog.length=0; sendResponse({success:true}); }
         catch(e) { sendResponse({success:false,error:e.message}); }
+      }
+
+      // Phase 8 — Strict Mode blocked domains management
+      else if (action==='GET_BLOCKED_DOMAINS') {
+        sendResponse({ domains: [...REDIRECT_DOMAINS], success: true });
+      }
+
+      else if (action==='UNBLOCK_DOMAIN') {
+        const dom = message.domain;
+        if (dom) REDIRECT_DOMAINS.delete(dom);
+        sendResponse({ success: true });
       }
 
       else if (action==='WHITELIST_DOMAIN') {
@@ -939,10 +1034,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         trustedDomains[d]={ts:Date.now(),reason:message.reason||'user'};
         try { await chrome.storage.local.set({trustedDomains}); } catch {}
         for (const [tid,s] of Object.entries(tabStats)) {
-          if (clean(s.domain)===clean(d)) s.trustOverride=true;
+          if (clean(s.domain)===clean(d)) {
+            s.trustOverride=true;
+            // Push immediate update so popup re-renders without polling
+            try { await chrome.runtime.sendMessage({ type:'TRUST_CHANGED', domain:d, trusted:true }); } catch {}
+          }
         }
         log('Trusted:',d);
-        sendResponse({success:true});
+        sendResponse({success:true, trusted:true});
       }
 
       else if (action==='UNTRUST_DOMAIN') {
@@ -950,9 +1049,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         delete trustedDomains[d];
         try { await chrome.storage.local.set({trustedDomains}); } catch {}
         for (const [tid,s] of Object.entries(tabStats)) {
-          if (clean(s.domain)===clean(d)) { s.trustOverride=false; riskDebounce[tid]=0; await updateRisk(parseInt(tid)); }
+          if (clean(s.domain)===clean(d)) {
+            s.trustOverride=false;
+            riskDebounce[tid]=0;
+            await updateRisk(parseInt(tid));
+            // Push immediate update
+            try { await chrome.runtime.sendMessage({ type:'TRUST_CHANGED', domain:d, trusted:false }); } catch {}
+          }
         }
-        sendResponse({success:true});
+        sendResponse({success:true, trusted:false});
       }
 
       else if (action==='GET_TRUST_STATUS') {
@@ -1047,18 +1152,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
       else if (action==='GET_GRAPH_DATA') {
         try {
-          const trackerEntries=await storageManager.getAll('trackers',5000);
-          const nodeMap=new Map(); const linkSet=new Set(); const links=[];
-          for (const {siteDomain,trackerDomain,count} of (trackerEntries||[])) {
-            if (!siteDomain||!trackerDomain) continue;
-            if (!nodeMap.has(siteDomain)) nodeMap.set(siteDomain,{id:siteDomain,type:'site',weight:1});
-            if (!nodeMap.has(trackerDomain)) nodeMap.set(trackerDomain,{id:trackerDomain,type:'tracker',weight:0});
-            nodeMap.get(trackerDomain).weight+=(count||1);
-            const key=`${siteDomain}::${trackerDomain}`;
-            if (!linkSet.has(key)) { linkSet.add(key); links.push({source:siteDomain,target:trackerDomain,value:count||1}); }
+          const trackerEntries = await storageManager.getAll('trackers', 5000);
+          const siteEntries    = await storageManager.getAll('sites', 500);
+          // Build a quick riskScore lookup by domain
+          const siteRiskMap = Object.fromEntries(
+            (siteEntries||[]).map(s => [s.domain, s.riskScore||0])
+          );
+          // Helper: derive tracker category from domain
+          const AD_KW  = ['doubleclick','googlesyndication','adnxs','criteo','pubmatic','rubiconproject','openx','taboola','outbrain','adroll','media.net','amazon-adsystem'];
+          const ANA_KW = ['google-analytics','analytics.twitter','hotjar','fullstory','mouseflow','clarity.ms','mixpanel','amplitude','segment','heap','newrelic','sentry'];
+          function categoryOf(domain='') {
+            const d = domain.toLowerCase();
+            if (AD_KW.some(k  => d.includes(k))) return 'Advertising';
+            if (ANA_KW.some(k => d.includes(k))) return 'Analytics';
+            return 'Other';
           }
-          sendResponse({success:true,nodes:Array.from(nodeMap.values()),links});
-        } catch(e) { sendResponse({success:false,nodes:[],links:[],error:e.message}); }
+
+          const nodeMap = new Map(); const linkSet = new Set(); const links = [];
+          for (const { siteDomain, trackerDomain, count } of (trackerEntries||[])) {
+            if (!siteDomain || !trackerDomain) continue;
+            if (!nodeMap.has(siteDomain))    nodeMap.set(siteDomain,    { id:siteDomain,    type:'site',    weight:1, riskScore:siteRiskMap[siteDomain]||0 });
+            if (!nodeMap.has(trackerDomain)) nodeMap.set(trackerDomain, { id:trackerDomain, type:'tracker', weight:0, category:categoryOf(trackerDomain) });
+            nodeMap.get(trackerDomain).weight += (count||1);
+            // Propagate category to edge too
+            const key = `${siteDomain}::${trackerDomain}`;
+            if (!linkSet.has(key)) { linkSet.add(key); links.push({ source:siteDomain, target:trackerDomain, value:count||1, category:categoryOf(trackerDomain) }); }
+          }
+          sendResponse({ success:true, nodes:Array.from(nodeMap.values()), links });
+        } catch(e) { sendResponse({ success:false, nodes:[], links:[], error:e.message }); }
       }
 
       else if (action==='GET_SECURITY_LAYER') {
@@ -1066,14 +1187,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const sc=tab?tabStaticCache[tab.id]:null;
         const s=tab?getTabStats(tab.id):null;
         const cw=sc?.certWarning||null;
+        // Derive TLS version label from encryption strength (header-based inference only)
+        const encRaw = cw?.encryption||'UNKNOWN';
+        const tlsVersion = cw?.isHTTPS
+          ? (encRaw==='STRONG' ? 'TLS 1.3' : encRaw==='WEAK' ? 'TLS 1.2' : 'TLS')
+          : null;
         sendResponse({
           success:true,
           certStatus:      cw?.certStatusLabel||'Unknown',
-          certSeverity:    cw?.severity||'NONE',
+          certSeverity:    cw?.severity||'NONE',   // alias for dashboard cert-status filter
+          severity:        cw?.severity||'NONE',
           isInvalid:       cw?.isInvalid||false,
           hasWarning:      cw?.hasWarning||false,
           encryption:      cw?.encryptionLabel||'Unknown',
-          encryptionRaw:   cw?.encryption||'UNKNOWN',
+          encryptionRaw:   encRaw,
+          tlsVersion,                               // e.g. "TLS 1.3" — inferred from headers
           hsts:            cw?.hsts||false,
           mixedContent:    cw?.mixedContent||false,
           securityHeadersScore: cw?.securityHeadersScore||0,
@@ -1198,7 +1326,7 @@ if (chrome.alarms) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
-  log('Initializing v4.0 — WebAdvisor Mode...');
+  log('Initializing v5.0 — WebAdvisor Mode + Risk Delta + Smart Suggestions...');
   try { await storageManager.init(); log('StorageManager ready'); }
   catch(e) { warn('StorageManager init failed:',e.message); }
 
