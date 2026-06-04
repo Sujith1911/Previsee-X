@@ -8,6 +8,9 @@
 import { storageManager } from './storage/StorageManager.js';
 import { CertWarningEngine } from './security/CertWarningEngine.js';
 import { AdvisoryEngine } from './risk/AdvisoryEngine.js';
+import { TrackerDetector } from './detectors/TrackerDetector.js';
+import { FingerprintDetector } from './detectors/FingerprintDetector.js';
+import { AnomalyDetector } from './detectors/AnomalyDetector.js';
 
 // ── Domain Lists ──────────────────────────────────────────────────────────────
 const AD_DOMAINS = [
@@ -78,6 +81,9 @@ let   strictMode     = false;
 let   adsBlockedCount     = 0;
 let   trackersBlockedCount = 0;
 let   listenersReady = false;
+const trackerDetector = new TrackerDetector();
+const fingerprintDetector = new FingerprintDetector();
+const anomalyDetector = new AnomalyDetector();
 
 // Per-tab overlay/warning dismissed flags
 const overlayDismissed = {}; // tabId → boolean
@@ -385,6 +391,21 @@ async function updateRisk(tabId) {
   if (!s.domain) return;
 
   const r=await calcRisk(tabId,s.domain);
+
+  // Run AnomalyDetector (updates statistical baseline and flags anomalies)
+  try {
+    const bh = getTabBehavior(tabId);
+    const requestCount = (bh?.networkInfo?.fetchCount || 0) + (bh?.networkInfo?.xhrCount || 0) + (bh?.networkInfo?.websocketCount || bh?.networkInfo?.wsCount || 0);
+    await anomalyDetector.execute({
+      domain: s.domain,
+      requestCount,
+      cookieCount: s.cookieCount,
+      trackerCount: s.trackerCount
+    });
+  } catch (err) {
+    warn('AnomalyDetector execute failed:', err.message);
+  }
+
   try {
     await updateSiteStats(s.domain,{ riskScore:r.score, riskLevel:r.level });
     await storageManager.addRiskHistory({
@@ -618,18 +639,51 @@ function setupListeners() {
         bh.networkInfo.thirdPartyDomains.push(reqDomain);
       if (details.type==='xmlhttprequest') bh.networkInfo.xhrCount++;
 
-      if (isAd(reqDomain)||isStrictBlocked(reqDomain)) {
-        tab.adCount++; tab.blockedAds++;
-        await updateSiteStats(site,{trackerCount:1,adCount:1,blockedAds:1});
-        await addTrackerEntry(site,reqDomain);
-        await logBlockedRequest(reqDomain,details.url,'ad');
-        tab.trackerCount++;
-      } else if (isTracker(reqDomain)) {
-        tab.trackerCount++;
-        await updateSiteStats(site,{trackerCount:1});
-        await addTrackerEntry(site,reqDomain);
-        await logBlockedRequest(reqDomain,details.url,'tracker');
-      } else { return; }
+      // 3. Run TrackerDetector (hybrid blocklist + ML classification)
+      let detection = { isTracker: false };
+      try {
+        detection = await trackerDetector.execute({
+          domain: reqDomain,
+          url: details.url,
+          type: details.type,
+          tabId: details.tabId,
+          sourceDomain: site
+        });
+      } catch (err) {
+        warn('TrackerDetector execute failed:', err.message);
+      }
+
+      if (detection.isTracker) {
+        const category = detection.category || 'unknown';
+        if (category === 'advertising' || isAd(reqDomain) || isStrictBlocked(reqDomain)) {
+          tab.adCount++; tab.blockedAds++;
+          await updateSiteStats(site, { trackerCount: 1, adCount: 1, blockedAds: 1 });
+          await addTrackerEntry(site, reqDomain);
+          await logBlockedRequest(reqDomain, details.url, 'ad');
+          tab.trackerCount++;
+        } else {
+          tab.trackerCount++;
+          await updateSiteStats(site, { trackerCount: 1 });
+          await addTrackerEntry(site, reqDomain);
+          await logBlockedRequest(reqDomain, details.url, 'tracker');
+        }
+      } else {
+        // Fallback to legacy checks
+        if (isAd(reqDomain) || isStrictBlocked(reqDomain)) {
+          tab.adCount++; tab.blockedAds++;
+          await updateSiteStats(site, { trackerCount: 1, adCount: 1, blockedAds: 1 });
+          await addTrackerEntry(site, reqDomain);
+          await logBlockedRequest(reqDomain, details.url, 'ad');
+          tab.trackerCount++;
+        } else if (isTracker(reqDomain)) {
+          tab.trackerCount++;
+          await updateSiteStats(site, { trackerCount: 1 });
+          await addTrackerEntry(site, reqDomain);
+          await logBlockedRequest(reqDomain, details.url, 'tracker');
+        } else {
+          return;
+        }
+      }
       await updateRisk(details.tabId);
     },
     { urls:['<all_urls>'] }
@@ -1131,6 +1185,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!data) { sendResponse({received:true}); return; }
         let domain;
         try { domain=clean(new URL(data.url).hostname); } catch { sendResponse({received:true}); return; }
+        
+        // Pass individual API accesses to FingerprintDetector
+        const apis = {
+          canvas: 'CanvasRenderingContext2D',
+          webgl: 'WebGLRenderingContext',
+          audio: 'AudioContext'
+        };
+        for (const [key, apiName] of Object.entries(apis)) {
+          const count = data[key] || 0;
+          for (let i = 0; i < count; i++) {
+            try {
+              await fingerprintDetector.execute({ domain, api: apiName, method: 'access' });
+            } catch (err) {
+              warn('FingerprintDetector execute failed:', err.message);
+            }
+          }
+        }
+
         const total=(data.canvas||0)+(data.webgl||0)+(data.audio||0);
         if (total>0) {
           await updateSiteStats(domain,{fingerprintCount:total});
@@ -1329,6 +1401,15 @@ async function init() {
   log('Initializing v5.0 — WebAdvisor Mode + Risk Delta + Smart Suggestions...');
   try { await storageManager.init(); log('StorageManager ready'); }
   catch(e) { warn('StorageManager init failed:',e.message); }
+
+  try { await trackerDetector.init(); log('TrackerDetector ready'); }
+  catch(e) { warn('TrackerDetector init failed:',e.message); }
+
+  try { await fingerprintDetector.init(); log('FingerprintDetector ready'); }
+  catch(e) { warn('FingerprintDetector init failed:',e.message); }
+
+  try { await anomalyDetector.init(); log('AnomalyDetector ready'); }
+  catch(e) { warn('AnomalyDetector init failed:',e.message); }
 
   try {
     const wl=await storageManager.get('sites','__whitelist__');
