@@ -108,13 +108,14 @@
     lastData      = data;
     currentDomain = data.domain || '';
 
-    // Parallel: security layer + advisory + filtered domain history
-    const [sec, advisory, hist] = await Promise.all([
+    // Parallel: security layer + advisory + filtered domain history + explainability
+    const [sec, advisory, hist, exp] = await Promise.all([
       msg({ action: 'GET_SECURITY_LAYER' }),
       msg({ action: 'GET_ADVISORY' }),
       currentDomain
         ? msg({ action: 'GET_RISK_HISTORY_FILTERED', domain: currentDomain, range: activeRange })
         : Promise.resolve(null),
+      msg({ action: 'GET_EXPLAINABILITY' })
     ]);
 
     // Blocked log
@@ -128,7 +129,7 @@
       chrome.runtime.onMessage.addListener(handlePushUpdate);
     }
 
-    render(data, sec, advisory, hist?.history || []);
+    render(data, sec, advisory, hist?.history || [], exp?.explanation || null);
   }
 
   /* ── Push update handler ─────────────────────────────────────────────── */
@@ -160,7 +161,7 @@
   /* ══════════════════════════════════════════════════════════════════════
      render — update all UI panels
   ══════════════════════════════════════════════════════════════════════ */
-  function render(data, sec, advisory, histPoints = []) {
+  function render(data, sec, advisory, histPoints = [], explanation = null) {
     $('loading').style.display = 'none';
     $('content').style.display = 'block';
 
@@ -217,7 +218,7 @@
     renderTrackerList(trackerItems);
 
     // ── Risk Breakdown ─────────────────────────────────────────────────
-    renderBreakdown(data.staticBreakdown || []);
+    renderBreakdown(explanation);
 
     // ── Blocked Resources ──────────────────────────────────────────────
     renderBlockedResources(blockHistory);
@@ -556,19 +557,29 @@
   }
 
   /* ── Risk Breakdown ───────────────────────────────────────────────── */
-  function renderBreakdown(breakdown) {
+  function renderBreakdown(explanation) {
     const el = $('factorList');
     if (!el) return;
-    const factors = (breakdown || []).filter(f => f.delta > 0).sort((a, b) => b.delta - a.delta);
-    if (!factors.length) {
-      el.innerHTML = `<div class="empty-state">No static risk factors detected</div>`; return;
+    if (!explanation || !explanation.contributors?.length) {
+      el.innerHTML = `<div class="empty-state">No risk factors evaluated yet</div>`; return;
     }
-    el.innerHTML = factors.slice(0, 8).map(f => `
-      <div class="factor">
-        <span class="icon">▪</span>
-        <span class="text">${f.factor}</span>
-        <span class="delta">+${f.delta}</span>
-      </div>`).join('');
+
+    const summaryHtml = `<div style="font-size:11px;color:var(--dim);margin-bottom:10px;line-height:1.4;border-bottom:1px solid var(--border);padding-bottom:8px;">${explanation.summary}</div>`;
+
+    const listHtml = explanation.contributors.map(c => {
+      const color = c.impact === 'CRITICAL' ? 'var(--red)' : c.impact === 'HIGH' ? 'var(--orange)' : c.impact === 'MODERATE' ? 'var(--yellow)' : 'var(--green)';
+      return `
+      <div class="factor" style="margin-bottom:6px;display:flex;align-items:center;">
+        <span class="icon" style="color:${color};margin-right:6px;">▪</span>
+        <span class="text" style="flex:1;">
+          <strong style="color:var(--text);font-size:11px;">${c.label}</strong>
+          <span style="display:block;font-size:9px;color:var(--muted);">${c.description}</span>
+        </span>
+        <span class="delta" style="color:${color};font-weight:800;font-size:11px;">+${c.contribution}</span>
+      </div>`;
+    }).join('');
+
+    el.innerHTML = summaryHtml + listHtml;
   }
 
   /* ── Blocked Resources ────────────────────────────────────────────── */

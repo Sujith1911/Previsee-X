@@ -11,6 +11,14 @@ import { AdvisoryEngine } from './risk/AdvisoryEngine.js';
 import { TrackerDetector } from './detectors/TrackerDetector.js';
 import { FingerprintDetector } from './detectors/FingerprintDetector.js';
 import { AnomalyDetector } from './detectors/AnomalyDetector.js';
+import { ThreatIntelEngine } from './security/ThreatIntelEngine.js';
+import { AttackSurfaceEngine } from './security/AttackSurfaceEngine.js';
+import { BehavioralAnalysisEngine } from './detectors/BehavioralAnalysisEngine.js';
+import { AdaptiveWeightingEngine } from './risk/AdaptiveWeightingEngine.js';
+import { analyzeDNA } from './risk/BehavioralDNA.js';
+import { ExplainabilityEngine } from './explainability/ExplainabilityEngine.js';
+import { GraphEngine } from './graph/GraphEngine.js';
+import { ThreatProjectionEngine } from './risk/ThreatProjectionEngine.js';
 
 // ── Domain Lists ──────────────────────────────────────────────────────────────
 const AD_DOMAINS = [
@@ -84,6 +92,15 @@ let   listenersReady = false;
 const trackerDetector = new TrackerDetector();
 const fingerprintDetector = new FingerprintDetector();
 const anomalyDetector = new AnomalyDetector();
+const threatIntelEngine = new ThreatIntelEngine();
+const attackSurfaceEngine = new AttackSurfaceEngine();
+const behavioralAnalysisEngine = new BehavioralAnalysisEngine();
+const adaptiveWeightingEngine = new AdaptiveWeightingEngine();
+const explainabilityEngine = new ExplainabilityEngine();
+const graphEngine = new GraphEngine();
+const threatProjectionEngine = new ThreatProjectionEngine();
+
+const BEHAVIORAL_KEYS = ['canvas','webgl','audio','fonts','webrtc','battery','localStorage','clipboard','mediaDevices','notifications','fullscreen'];
 
 // Per-tab overlay/warning dismissed flags
 const overlayDismissed = {}; // tabId → boolean
@@ -121,8 +138,11 @@ function getTabStats(tabId) {
 function getTabBehavior(tabId) {
   if (!tabBehavior[tabId]) {
     tabBehavior[tabId] = {
-      apiCounts:   { canvas:0, webgl:0, audio:0, fonts:0, webrtc:0, battery:0, localStorage:0, clipboard:0 },
-      networkInfo: { fetchCount:0, xhrCount:0, wsCount:0, thirdPartyDomains:[] }
+      apiCounts:   { canvas:0, webgl:0, audio:0, fonts:0, webrtc:0, battery:0, localStorage:0, clipboard:0, mediaDevices:0, notifications:0, fullscreen:0 },
+      networkInfo: { fetchCount:0, xhrCount:0, wsCount:0, thirdPartyDomains:[] },
+      redirects: 0,
+      downloads: 0,
+      hijacks: 0
     };
   }
   return tabBehavior[tabId];
@@ -303,70 +323,176 @@ async function calcRisk(tabId, domain) {
   const s  = getTabStats(tabId);
   const bh = getTabBehavior(tabId);
 
-  // Behavioral score — always computed
-  let behavioral = 0;
-  if ((s.trackerCount||0)>0) behavioral+=Math.min(40,Math.log2(s.trackerCount+1)*13);
-  behavioral+=Math.min(30,(s.fingerprintCount||0)*10);
-  behavioral+=Math.min(20,((s.cookieCount||0)>5?((s.cookieCount||0)-5)*2:0));
-  behavioral=Math.min(100,Math.round(behavioral));
+  // 1. Run ThreatIntelEngine
+  const threatIntelResult = await threatIntelEngine.execute(domain);
 
-  const cluster    = dnaCluster(bh.apiCounts);
-  const reputBoost = cluster.riskBoost;
+  // Check if site is trusted (user trust, whitelist, or global high-reputation)
+  const isUserTrusted = !!(domain && (trustedDomains[domain] || userWhitelist.has(domain)));
+  const isGlobalTrusted = threatIntelResult.category === 'Trusted';
+  const isTrusted = isUserTrusted || isGlobalTrusted;
 
-  // Static score — always computed (use cached or 0 if not yet received)
-  const staticScore = tabStaticCache[tabId]?.staticScore ?? 0;
+  // 2. Run AttackSurfaceEngine
+  const staticCache = tabStaticCache[tabId] || {};
+  const attackSurfaceResult = await attackSurfaceEngine.execute({
+    url: staticCache.url || `https://${domain}`,
+    headers: staticCache.rawHeaders || {},
+    cookies: staticCache.cookies || [],
+    certWarning: staticCache.certWarning || s.certWarning || null
+  });
 
-  // Security layer score (from cert/header analysis — 0–100, inverted to risk)
-  const certWarning = tabStaticCache[tabId]?.certWarning || null;
-  const secHeaderScore = computeSecurityLayerScore(certWarning); // 0–100 (higher = safer)
-  // Invert: lower headers score = higher security layer risk
-  const securityLayerRisk = Math.round(100 - secHeaderScore);
+  // 3. Run BehavioralAnalysisEngine
+  const behavioralAnalysisResult = await behavioralAnalysisEngine.execute({
+    domain,
+    apiCounts: bh.apiCounts,
+    redirects: bh.redirects || 0,
+    downloads: bh.downloads || 0,
+    hijacks: bh.hijacks || 0
+  });
 
-  const reputation = Math.min(100,Math.round(
-    ((s.trackerCount||0)>0?Math.min(50,(s.trackerCount||0)*5):0)+reputBoost
-  ));
+  // 4. Calculate Risk components
+  let behavioralRisk = 0;
+  if ((s.trackerCount||0)>0) behavioralRisk += Math.min(40, Math.log2(s.trackerCount+1)*13);
+  behavioralRisk += Math.min(30, (s.fingerprintCount||0)*10);
+  behavioralRisk += Math.min(20, ((s.cookieCount||0)>5 ? ((s.cookieCount||0)-5)*2 : 0));
+  behavioralRisk = Math.min(100, Math.round(behavioralRisk));
+
+  const staticHeadersRisk = 100 - (attackSurfaceResult.score || 0);
+
+  const certWarning = staticCache.certWarning || s.certWarning || null;
+  let securityLayerRisk = 0;
+  if (certWarning) {
+    if (certWarning.isInvalid || certWarning.severity === 'CRITICAL') {
+      securityLayerRisk = 100;
+    } else if (certWarning.severity === 'WARNING') {
+      securityLayerRisk = 50;
+    } else if (certWarning.severity === 'INFO') {
+      securityLayerRisk = 20;
+    } else {
+      securityLayerRisk = 0;
+    }
+  } else {
+    securityLayerRisk = 0;
+  }
+
+  // Reputation DNA clusters & PageRank
+  const dna = analyzeDNA({
+    trackerCount: s.trackerCount || 0,
+    cookieCount: s.cookieCount || 0,
+    fingerprintCount: s.fingerprintCount || 0,
+    securityHeadersScore: attackSurfaceResult.score || 0,
+    isHTTPS: (staticCache.url || '').startsWith('https://'),
+    tlsVersion: certWarning?.tlsVersion || 'TLS 1.3',
+    adCount: s.adCount || 0,
+    behavioralAnomaliesCount: behavioralAnalysisResult.anomalies?.length || 0,
+    connectionsCount: bh.networkInfo?.thirdPartyDomains?.length || 0
+  });
+  s.dnaHash = dna.hash;
+
+  let reputationRisk = 0;
+  if (isTrusted) {
+    reputationRisk = 0;
+  } else {
+    const adwareSim = dna.matches.find(m => m.name === 'Adware Network')?.similarity || 0;
+    const phishingSim = dna.matches.find(m => m.name === 'Phishing Cluster')?.similarity || 0;
+    const malwareSim = dna.matches.find(m => m.name === 'Malware Vector')?.similarity || 0;
+    reputationRisk = Math.max(
+      (s.trackerCount || 0) > 0 ? Math.min(50, (s.trackerCount || 0) * 5) : 0,
+      adwareSim * 0.6 + phishingSim * 0.8 + malwareSim * 1.0
+    );
+    reputationRisk = Math.min(100, Math.round(reputationRisk));
+  }
+
+  const threatIntelRisk = threatIntelResult.threatScore || 0;
+  const behavioralThreatRisk = behavioralAnalysisResult.behaviorScore || 0;
+
+  // 5. Run AdaptiveWeightingEngine
+  const adaptiveResult = await adaptiveWeightingEngine.execute(
+    {
+      behavioral: isTrusted ? Math.min(10, Math.round(behavioralRisk * 0.15)) : behavioralRisk,
+      staticHeaders: isTrusted ? Math.min(10, Math.round(staticHeadersRisk * 0.15)) : staticHeadersRisk,
+      reputation: reputationRisk,
+      securityLayer: securityLayerRisk,
+      threatIntel: threatIntelRisk,
+      behavioralThreat: behavioralThreatRisk
+    },
+    {
+      domain,
+      trusted: isTrusted,
+      threatIntelConfidence: threatIntelResult.confidence
+    }
+  );
+
+  let final = adaptiveResult.finalScore;
+  s.activeWeights = adaptiveResult.weights;
+
+  // Certificate invalid → force minimum risk 70
+  if (certWarning?.isInvalid && final < 70) final = 70;
 
   // Historical risk for this domain + risk delta calculation
   let userHistory = 0;
-  let riskDelta   = 0;   // positive = risk increased, negative = improved
+  let riskDelta   = 0;
   let avg7d       = 0;
   try {
     const hist = await storageManager.getRiskHistorySince(Date.now()-30*86400000);
     const dh   = (hist||[]).filter(h=>h.domain===domain).sort((a,b)=>a.timestamp-b.timestamp);
     if (dh.length) {
       userHistory = Math.round(dh.reduce((a,h)=>a+h.score,0)/dh.length);
-      // Last visit score for delta
       const lastVisitScore = dh[dh.length-1]?.score || 0;
-      // 7-day average
       const cutoff7d = Date.now() - 7*86400000;
       const dh7d = dh.filter(h=>h.timestamp>=cutoff7d);
       avg7d = dh7d.length ? Math.round(dh7d.reduce((a,h)=>a+h.score,0)/dh7d.length) : 0;
-      // Delta will be computed vs last visit after final score is known
       s._lastVisitScore = lastVisitScore;
     }
   } catch {}
 
-  // v5.0 weights: 0.35 Behavioral + 0.30 Static + 0.20 Reputation + 0.15 SecurityLayer
-  let final=Math.round(Math.min(100,Math.max(0,
-    0.35*behavioral+0.30*staticScore+0.20*reputation+0.15*securityLayerRisk
-  )));
-
-  // Certificate invalid → force minimum risk 70
-  if (certWarning?.isInvalid && final < 70) final = 70;
-
-  // Risk Delta: compare current score vs last visit
   if (s._lastVisitScore !== undefined) {
     riskDelta = final - (s._lastVisitScore || 0);
+  }
+
+  // 6. Run ThreatProjectionEngine
+  try {
+    const hist = await storageManager.getRiskHistorySince(Date.now()-30*86400000);
+    const domHist = (hist||[]).filter(h=>h.domain===domain);
+    const projectionResult = await threatProjectionEngine.execute({ history: domHist, currentScore: final });
+    s.projection = {
+      projectedRiskIn30Days: projectionResult.forecast30d,
+      confidence: projectionResult.confidence,
+      trend: projectionResult.trend30d,
+      clusterName: dna.primaryMatch,
+      clusterSimilarity: dna.matches[0]?.similarity || 0,
+      message: `Risk projected to ~${projectionResult.forecast30d}/100 in 30 days`
+    };
+  } catch (e) {
+    warn('Projection failed:', e.message);
+  }
+
+  // 7. Update GraphEngine
+  if (domain && domain !== 'Analyzing…') {
+    await graphEngine.execute({ source: domain, target: domain, sourceType: 'Website', targetType: 'Website' });
+    if (bh.networkInfo?.thirdPartyDomains) {
+      for (const t of bh.networkInfo.thirdPartyDomains) {
+        await graphEngine.execute({ source: domain, target: t, sourceType: 'Website', targetType: 'Tracker' });
+      }
+    }
+  }
+
+  // 8. Save telemetry to IndexedDB
+  try {
+    await storageManager.put('threatIntel', { domain, ...threatIntelResult, updatedAt: Date.now() });
+    await storageManager.put('attackSurface', { domain, ...attackSurfaceResult, updatedAt: Date.now() });
+    await storageManager.put('behaviorLogs', { domain, apiCounts: bh.apiCounts, redirects: bh.redirects, downloads: bh.downloads, hijacks: bh.hijacks, updatedAt: Date.now() });
+  } catch (e) {
+    warn('Failed to save telemetry:', e.message);
   }
 
   const level = final>=75?'CRITICAL':final>=50?'HIGH':final>=20?'MODERATE':'LOW';
   const classification = getRiskClassification(final);
   const webAdvisorStatus = getWebAdvisorStatus(final);
 
-  // Store scores (always — trust only affects display)
-  s.behavioralScore    = behavioral;
-  s.staticScore        = staticScore;
-  s.reputationScore    = reputation;
+  // Store scores
+  s.behavioralScore    = behavioralRisk;
+  s.staticScore        = attackSurfaceResult.score;
+  s.reputationScore    = reputationRisk;
   s.securityLayerScore = secHeaderScore;
   s.certWarning        = certWarning;
   s.currentSessionRisk = final;
@@ -378,7 +504,7 @@ async function calcRisk(tabId, domain) {
   s.avg7d              = avg7d;
   s.webAdvisorStatus   = webAdvisorStatus;
 
-  return { score:final, level, classification, behavioral, staticScore, reputation, userHistory, securityLayerRisk, secHeaderScore, webAdvisorStatus, riskDelta, avg7d };
+  return { score:final, level, classification, behavioral:behavioralRisk, staticScore:attackSurfaceResult.score, reputation:reputationRisk, userHistory, securityLayerRisk, secHeaderScore, webAdvisorStatus, riskDelta, avg7d };
 }
 
 // ── Debounced Risk Update ─────────────────────────────────────────────────────
@@ -817,7 +943,7 @@ function setupListeners() {
     }
   });
 
-  // Tab complete — compute DNA, projection, and force static+risk update
+  // Tab complete — force static+risk update (DNA/projection calculated in calcRisk)
   chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     if (changeInfo.status!=='complete') return;
     if (!tab.url||tab.url.startsWith('chrome://')) return;
@@ -826,7 +952,6 @@ function setupListeners() {
     if (!domain) return;
 
     const s=getTabStats(tabId);
-    const bh=getTabBehavior(tabId);
     s.domain=domain;
 
     // If static cache is still null (no headers received), compute minimum static score
@@ -843,37 +968,6 @@ function setupListeners() {
 
     // Always update risk on page complete
     await updateRisk(tabId);
-
-    // DNA fingerprint
-    const cluster=dnaCluster(bh.apiCounts);
-    const hash=dnaHash(bh.apiCounts,bh.networkInfo.thirdPartyDomains);
-    s.dnaHash=hash;
-    try {
-      await storageManager.put('models',{
-        key:`dna::${domain}`, domain, hash,
-        signature:{ apiUsage:bh.apiCounts, network:bh.networkInfo, cluster }, ts:Date.now()
-      });
-    } catch {}
-
-    // Threat projection
-    try {
-      const hist=await storageManager.getRiskHistorySince(Date.now()-30*86400000);
-      const domHist=(hist||[]).filter(h=>h.domain===domain);
-      const projected=projectRisk(domHist,cluster.riskBoost,s.riskScore);
-      const mid=Math.floor(domHist.length/2);
-      const trend=domHist.length>=4?(()=>{
-        const a1=domHist.slice(0,mid).reduce((a,h)=>a+h.score,0)/mid;
-        const a2=domHist.slice(mid).reduce((a,h)=>a+h.score,0)/(domHist.length-mid);
-        return a2-a1>5?'INCREASING':a2-a1<-5?'DECREASING':'STABLE';
-      })():'STABLE';
-      s.projection={
-        projectedRiskIn30Days:projected,
-        confidence:domHist.length>=5?'HIGH':domHist.length>=2?'MEDIUM':'LOW',
-        trend, clusterName:cluster.name, clusterSimilarity:cluster.similarity,
-        message:`Risk projected to ~${projected}/100 in 30 days`
-      };
-      await storageManager.put('models',{ key:`proj::${domain}`, domain, ...s.projection, ts:Date.now() });
-    } catch {}
   });
 
   chrome.tabs.onRemoved.addListener(tabId => {
@@ -884,6 +978,30 @@ function setupListeners() {
     delete overlayDismissed[tabId];
     delete certWarningDismissed[tabId];
   });
+
+  // Track redirects in main frames
+  chrome.webRequest.onBeforeRedirect.addListener(
+    (details) => {
+      if (details.tabId > 0 && details.type === 'main_frame') {
+        const bh = getTabBehavior(details.tabId);
+        bh.redirects = (bh.redirects || 0) + 1;
+      }
+    },
+    { urls: ['<all_urls>'] }
+  );
+
+  // Monitor auto-downloads via chrome.downloads API
+  if (chrome.downloads) {
+    chrome.downloads.onCreated.addListener((item) => {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs && tabs[0]) {
+          const bh = getTabBehavior(tabs[0].id);
+          bh.downloads = (bh.downloads || 0) + 1;
+          updateRisk(tabs[0].id).catch(() => {});
+        }
+      });
+    });
+  }
 }
 
 // ── Message Router ────────────────────────────────────────────────────────────
@@ -1138,6 +1256,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({hash:s?.dnaHash||null,signature:bh||null,success:true});
       }
 
+      else if (action==='GET_EXPLAINABILITY') {
+        const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+        if (!tab) { sendResponse({ success:false, error:'No active tab' }); return; }
+        const s = getTabStats(tab.id);
+        const bh = getTabBehavior(tab.id);
+        const sc = tabStaticCache[tab.id] || {};
+        const certWarning = sc.certWarning || s.certWarning || null;
+
+        // Run ExplainabilityEngine to get contributor deltas
+        const explanation = await explainabilityEngine.execute({
+          riskScore: s.riskScore,
+          components: {
+            behavioral: s.behavioralScore || 0,
+            staticHeaders: sc.staticScore != null ? (100 - sc.staticScore) : 0,
+            reputation: s.reputationScore || 0,
+            securityLayer: certWarning ? Math.round(100 - (certWarning.securityHeadersScore || 0)) : 50,
+            threatIntel: s.riskScore ? Math.round(s.riskScore * 0.15) : 0,
+            behavioralThreat: bh ? (bh.redirects || 0) * 15 + (bh.downloads || 0) * 30 + (bh.hijacks || 0) * 25 : 0
+          },
+          weights: s.activeWeights || {},
+          threatIntelDetails: {
+            confidence: 90,
+            indicators: ['Local heuristic threat pattern audit matches']
+          },
+          attackSurfaceDetails: {
+            score: sc.staticScore,
+            issues: sc.breakdown?.map(b => ({ label: b.factor, delta: b.delta })) || []
+          },
+          behavioralDetails: {
+            confidence: 85
+          },
+          evidenceCount: (s.trackerCount || 0) + (s.fingerprintCount || 0)
+        });
+        sendResponse({ success:true, explanation });
+      }
+
       else if (action==='GET_RESEARCH_DATA') {
         const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
         const s=tab?getTabStats(tab.id):{};
@@ -1145,6 +1299,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const sc=tab?tabStaticCache[tab.id]:null;
         let blockedRecent=[];
         try { blockedRecent=await storageManager.getBlockedRequests(50); } catch {}
+        
+        const dna = analyzeDNA({
+          trackerCount: s.trackerCount || 0,
+          cookieCount: s.cookieCount || 0,
+          fingerprintCount: s.fingerprintCount || 0,
+          securityHeadersScore: sc?.staticScore != null ? (100 - sc.staticScore) : 0,
+          isHTTPS: (sc?.url || '').startsWith('https://'),
+          tlsVersion: sc?.certWarning?.tlsVersion || 'TLS 1.3',
+          adCount: s.adCount || 0,
+          behavioralAnomaliesCount: (bh.redirects || 0) + (bh.downloads || 0) + (bh.hijacks || 0),
+          connectionsCount: bh.networkInfo?.thirdPartyDomains?.length || 0
+        });
+
         sendResponse({
           success:true,
           domain:s.domain||'',
@@ -1153,7 +1320,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           currentSessionRisk:s.currentSessionRisk, historicalRisk:s.historicalRisk,
           staticBreakdown:sc?.breakdown||[], rawHeaders:sc?.rawHeaders||{},
           dnaHash:s.dnaHash, behavioralSignature:bh,
-          clusterMatch:bh?dnaCluster(bh.apiCounts||{}):null,
+          clusterMatch: {
+            name: dna.primaryMatch,
+            similarity: dna.matches[0]?.similarity || 0,
+            riskBoost: dna.matches[0]?.name === 'Trusted Services' ? 0 : (dna.matches[0]?.name === 'Adware Network' ? 15 : 25)
+          },
           projection:s.projection, blockedRecent,
           adsBlockedCount, trackersBlockedCount, strictMode,
           ts:Date.now()
@@ -1230,6 +1401,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const siteRiskMap = Object.fromEntries(
             (siteEntries||[]).map(s => [s.domain, s.riskScore||0])
           );
+          
+          // Seed the graph engine with database entries
+          for (const { siteDomain, trackerDomain } of (trackerEntries||[])) {
+            if (siteDomain && trackerDomain) {
+              await graphEngine.execute({ source: siteDomain, target: trackerDomain, sourceType: 'Website', targetType: 'Tracker' });
+            }
+          }
+          for (const s of (siteEntries||[])) {
+            if (s.domain) {
+              await graphEngine.execute({ source: s.domain, target: s.domain, sourceType: 'Website', targetType: 'Website' });
+            }
+          }
+
+          // Compute Graph algorithms
+          graphEngine.computePageRank();
+          graphEngine.computeBetweennessCentrality();
+          graphEngine.detectCommunities();
+
+          const graphData = graphEngine.exportGraph();
+
           // Helper: derive tracker category from domain
           const AD_KW  = ['doubleclick','googlesyndication','adnxs','criteo','pubmatic','rubiconproject','openx','taboola','outbrain','adroll','media.net','amazon-adsystem'];
           const ANA_KW = ['google-analytics','analytics.twitter','hotjar','fullstory','mouseflow','clarity.ms','mixpanel','amplitude','segment','heap','newrelic','sentry'];
@@ -1240,17 +1431,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return 'Other';
           }
 
-          const nodeMap = new Map(); const linkSet = new Set(); const links = [];
-          for (const { siteDomain, trackerDomain, count } of (trackerEntries||[])) {
-            if (!siteDomain || !trackerDomain) continue;
-            if (!nodeMap.has(siteDomain))    nodeMap.set(siteDomain,    { id:siteDomain,    type:'site',    weight:1, riskScore:siteRiskMap[siteDomain]||0 });
-            if (!nodeMap.has(trackerDomain)) nodeMap.set(trackerDomain, { id:trackerDomain, type:'tracker', weight:0, category:categoryOf(trackerDomain) });
-            nodeMap.get(trackerDomain).weight += (count||1);
-            // Propagate category to edge too
-            const key = `${siteDomain}::${trackerDomain}`;
-            if (!linkSet.has(key)) { linkSet.add(key); links.push({ source:siteDomain, target:trackerDomain, value:count||1, category:categoryOf(trackerDomain) }); }
-          }
-          sendResponse({ success:true, nodes:Array.from(nodeMap.values()), links });
+          const nodes = graphData.nodes.map(n => {
+            const isSite = n.type === 'Website';
+            return {
+              id: n.id,
+              type: isSite ? 'site' : 'tracker',
+              weight: n.weight,
+              riskScore: isSite ? (siteRiskMap[n.id] || 0) : undefined,
+              category: isSite ? undefined : categoryOf(n.id),
+              betweenness: n.betweenness,
+              pagerank: n.pagerank,
+              community: n.community,
+              organization: n.organization
+            };
+          });
+
+          sendResponse({ success:true, nodes, links: graphData.links });
         } catch(e) { sendResponse({ success:false, nodes:[], links:[], error:e.message }); }
       }
 
@@ -1411,6 +1607,27 @@ async function init() {
   try { await anomalyDetector.init(); log('AnomalyDetector ready'); }
   catch(e) { warn('AnomalyDetector init failed:',e.message); }
 
+  try { await threatIntelEngine.init(); log('ThreatIntelEngine ready'); }
+  catch(e) { warn('ThreatIntelEngine init failed:', e.message); }
+
+  try { await attackSurfaceEngine.init(); log('AttackSurfaceEngine ready'); }
+  catch(e) { warn('AttackSurfaceEngine init failed:', e.message); }
+
+  try { await behavioralAnalysisEngine.init(); log('BehavioralAnalysisEngine ready'); }
+  catch(e) { warn('BehavioralAnalysisEngine init failed:', e.message); }
+
+  try { await adaptiveWeightingEngine.init(); log('AdaptiveWeightingEngine ready'); }
+  catch(e) { warn('AdaptiveWeightingEngine init failed:', e.message); }
+
+  try { await explainabilityEngine.init(); log('ExplainabilityEngine ready'); }
+  catch(e) { warn('ExplainabilityEngine init failed:', e.message); }
+
+  try { await graphEngine.init(); log('GraphEngine ready'); }
+  catch(e) { warn('GraphEngine init failed:', e.message); }
+
+  try { await threatProjectionEngine.init(); log('ThreatProjectionEngine ready'); }
+  catch(e) { warn('ThreatProjectionEngine init failed:', e.message); }
+
   try {
     const wl=await storageManager.get('sites','__whitelist__');
     if (wl?.domains) wl.domains.forEach(d=>userWhitelist.add(d));
@@ -1427,7 +1644,7 @@ async function init() {
 
   await setupAdBlocking();
   setupListeners();
-  log('PRIVISEE-X v4.0 ready ✓ — WebAdvisor + CertWarning + Advisory Engine active');
+  log('PRIVISEE-X v5.0 ready ✓ — Threat Intelligence Platform Active');
 }
 
 init().catch(e=>console.error('[PRIVISEE-X BG] Fatal init error:',e));

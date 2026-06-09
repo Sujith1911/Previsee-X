@@ -1,119 +1,133 @@
 /**
- * PRIVISEE-X v4.0
- * Risk: ThreatProjectionEngine
- *
- * Computes a 30-day forward risk trajectory using:
- *   1. Exponential Moving Average (EMA) on historical risk scores
- *   2. Behavioral DNA cluster match bonus
- *   3. Time-decay weighting (recent visits count more)
- *
- * Output:
- *   projectedRiskIn30Days: number (0–100)
- *   confidence:            'LOW' | 'MEDIUM' | 'HIGH'
- *   trend:                 'STABLE' | 'INCREASING' | 'DECREASING'
- *   driverFactors:         string[]
- *   message:               string
+ * PRIVISEE-X v5.0 — ThreatProjectionEngine
+ * Temporal Risk Evolution & Forward Forecasting.
+ * Uses Holt's Linear Trend double-exponential smoothing to forecast risk scores.
+ * Computes 7, 30, and 90-day EMAs and trend directions.
  */
 
-'use strict';
+import { EngineBase } from '../core/EngineBase.js';
 
-const EMA_ALPHA      = 0.3;  // Smoothing factor — higher = more weight on recent
-const MIN_HISTORY    = 2;    // Minimum history entries for HIGH confidence
-const MEDIUM_HISTORY = 5;    // Threshold for MEDIUM confidence
-
-/**
- * Compute EMA of a time-ordered score array (oldest to newest)
- */
-function computeEMA(scores) {
-  if (!scores.length) return 0;
-  let ema = scores[0];
-  for (let i = 1; i < scores.length; i++) {
-    ema = EMA_ALPHA * scores[i] + (1 - EMA_ALPHA) * ema;
+export class ThreatProjectionEngine extends EngineBase {
+  constructor() {
+    super('ThreatProjectionEngine');
   }
-  return ema;
+
+  async init() {
+    await super.init();
+    this.logger.info('Threat Projection Engine ready');
+  }
+
+  /**
+   * Calculate risk trends and predictions based on domain history
+   * @param {object} params - { history, currentScore }
+   * @returns {Promise<{ trend7d: string, trend30d: string, trend90d: string, forecast7d: number, forecast30d: number, forecast90d: number, confidence: string }>}
+   */
+  async execute({ history = [], currentScore = 0 }) {
+    const scores = (history || []).map(h => h.score || 0);
+    
+    // Add current score to ensure latest state is reflected
+    scores.push(currentScore);
+
+    const N = scores.length;
+
+    // 1. Calculate EMAs for different windows
+    const ema7d = this.calculateEMA(scores, 0.25); // ~7 data points window
+    const ema30d = this.calculateEMA(scores, 0.06); // ~30 data points window
+    const ema90d = this.calculateEMA(scores, 0.02); // ~90 data points window
+
+    // 2. Trend Classification
+    const trend7d = this.classifyTrend(scores, 7);
+    const trend30d = this.classifyTrend(scores, 15);
+    const trend90d = this.classifyTrend(scores, 45);
+
+    // 3. Holt's Double Exponential Smoothing Forecast
+    // Forecast 7, 30, 90 visits/days ahead
+    const forecasts = this.computeHoltForecast(scores, [7, 30, 90]);
+
+    // 4. Confidence level
+    let confidence = 'LOW';
+    if (N >= 15) confidence = 'HIGH';
+    else if (N >= 5) confidence = 'MEDIUM';
+
+    return {
+      ema7d: Math.round(ema7d),
+      ema30d: Math.round(ema30d),
+      ema90d: Math.round(ema90d),
+      trend7d,
+      trend30d,
+      trend90d,
+      forecast7d: forecasts[0],
+      forecast30d: forecasts[1],
+      forecast90d: forecasts[2],
+      confidence
+    };
+  }
+
+  /**
+   * Calculate Single Exponential Moving Average (EMA)
+   */
+  calculateEMA(scores, alpha) {
+    if (!scores.length) return 0;
+    let ema = scores[0];
+    for (let i = 1; i < scores.length; i++) {
+      ema = alpha * scores[i] + (1 - alpha) * ema;
+    }
+    return ema;
+  }
+
+  /**
+   * Classify trend direction based on historical windows
+   */
+  classifyTrend(scores, windowSize) {
+    const N = scores.length;
+    if (N < 2) return 'STABLE';
+
+    // Get window subset
+    const recentSubset = scores.slice(-windowSize);
+    if (recentSubset.length < 2) return 'STABLE';
+
+    const midpoint = Math.floor(recentSubset.length / 2);
+    const firstHalf = recentSubset.slice(0, midpoint);
+    const secondHalf = recentSubset.slice(midpoint);
+
+    const avgFirst = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
+    const avgSecond = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
+    const delta = avgSecond - avgFirst;
+
+    if (delta > 4.5) return 'INCREASING';
+    if (delta < -4.5) return 'DECREASING';
+    return 'STABLE';
+  }
+
+  /**
+   * Holt's Linear Trend Double Exponential Smoothing
+   * Lt = alpha * Yt + (1 - alpha) * (Lt-1 + Tt-1)
+   * Tt = beta * (Lt - Lt-1) + (1 - beta) * Tt-1
+   * Ft+h = Lt + h * Tt
+   */
+  computeHoltForecast(scores, steps = []) {
+    const N = scores.length;
+    const fallback = scores[N - 1] || 0;
+    if (N < 3) {
+      return steps.map(() => Math.round(fallback));
+    }
+
+    const alpha = 0.2; // Level smoothing
+    const beta = 0.1;  // Trend smoothing
+
+    // Initialization
+    let L = scores[0];
+    let T = scores[1] - scores[0];
+
+    for (let i = 1; i < N; i++) {
+      const prevL = L;
+      L = alpha * scores[i] + (1 - alpha) * (L + T);
+      T = beta * (L - prevL) + (1 - beta) * T;
+    }
+
+    return steps.map(h => {
+      const projected = L + h * T;
+      return Math.max(0, Math.min(100, Math.round(projected)));
+    });
+  }
 }
-
-/**
- * Detect trend direction compared to an older window
- */
-function detectTrend(scores) {
-  if (scores.length < 2) return 'STABLE';
-  const midpoint  = Math.floor(scores.length / 2);
-  const firstHalf = scores.slice(0, midpoint);
-  const secondHalf = scores.slice(midpoint);
-  const avgFirst  = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
-  const avgSecond = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
-  const delta     = avgSecond - avgFirst;
-  if (delta > 5)  return 'INCREASING';
-  if (delta < -5) return 'DECREASING';
-  return 'STABLE';
-}
-
-/**
- * Project future risk for a domain
- * @param {object} params
- * @param {Array}  params.history       - [{ ts, score, staticScore, behavioralScore }] oldest first
- * @param {object} params.clusterMatch  - { clusterName, similarity, riskBoost } from BehavioralDNA
- * @param {number} params.currentScore  - latest computed risk score
- * @returns {ProjectionResult}
- */
-function project({ history = [], clusterMatch = {}, currentScore = 0 }) {
-  const scores = history.map(h => h.score || 0);
-  const driverFactors = [];
-
-  // Base projection: EMA of history or current score if no history
-  let projected = scores.length >= MIN_HISTORY
-    ? computeEMA(scores)
-    : currentScore;
-
-  const trend = detectTrend(scores);
-
-  // Trend modifiers
-  if (trend === 'INCREASING') {
-    // Extrapolate growth: use last delta as forward indicator
-    const recentDelta = scores.length >= 2
-      ? scores[scores.length - 1] - scores[scores.length - 2]
-      : 0;
-    projected += recentDelta * 0.7; // 70% of last delta projected forward
-    driverFactors.push('Rising risk trend over recent visits');
-  } else if (trend === 'DECREASING') {
-    projected *= 0.9; // 10% reduction
-  }
-
-  // Cluster match bonus
-  const boost = clusterMatch.riskBoost || 0;
-  if (boost > 0) {
-    projected += boost * 0.5; // Half the cluster boost applied to projection
-    driverFactors.push(`Behavioral pattern matches ${clusterMatch.clusterName} cluster (${(clusterMatch.similarity * 100).toFixed(0)}% similarity)`);
-  }
-
-  // Clamp
-  projected = Math.round(Math.min(100, Math.max(0, projected)));
-
-  // Confidence based on history depth
-  const confidence = scores.length >= MEDIUM_HISTORY ? 'HIGH'
-    : scores.length >= MIN_HISTORY ? 'MEDIUM'
-    : 'LOW';
-
-  // Add score-based drivers if not already covered
-  if (currentScore >= 50 && !driverFactors.length) {
-    driverFactors.push('Current risk is elevated');
-  }
-  if (currentScore <= 15 && scores.length < MIN_HISTORY) {
-    driverFactors.push('Insufficient history for accurate projection');
-  }
-
-  // Human-readable message
-  const direction = trend === 'INCREASING' ? 'increase' : trend === 'DECREASING' ? 'decrease' : 'remain stable';
-  const message   = `Risk projected to ${direction} to ~${projected}/100 in 30 days (${confidence} confidence)`;
-
-  return {
-    projectedRiskIn30Days: projected,
-    confidence,
-    trend,
-    driverFactors: driverFactors.length ? driverFactors : ['No significant risk signals detected'],
-    message
-  };
-}
-
-if (typeof module !== 'undefined') module.exports = { project };

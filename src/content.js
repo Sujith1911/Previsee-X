@@ -25,7 +25,8 @@
     webrtc: 0, battery: 0,
     localStorage: 0, sessionStorage: 0, clipboard: 0,
     fetch: 0, xhr: 0, websocket: 0,
-    deviceMemory: 0, hardwareConcurrency: 0, connection: 0
+    deviceMemory: 0, hardwareConcurrency: 0, connection: 0,
+    fullscreen: 0, mediaDevices: 0, notifications: 0
   };
 
   let lastReport = 0;
@@ -235,6 +236,45 @@
       }
     }
   } catch {}
+
+  // ── Fullscreen Request abuse ───────────────────────────────────────────────
+  try {
+    const _requestFullscreen = Element.prototype.requestFullscreen;
+    Element.prototype.requestFullscreen = function(...args) {
+      counts.fullscreen++; scheduleReport();
+      return _requestFullscreen.apply(this, args);
+    };
+  } catch {}
+
+  // ── Camera / Microphone queries ────────────────────────────────────────────
+  try {
+    if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+      const _enumDevices = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);
+      navigator.mediaDevices.enumerateDevices = function() {
+        counts.mediaDevices++; scheduleReport();
+        return _enumDevices();
+      };
+    }
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      const _getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      navigator.mediaDevices.getUserMedia = function(...args) {
+        counts.mediaDevices++; scheduleReport();
+        return _getUserMedia(...args);
+      };
+    }
+  } catch {}
+
+  // ── Push Notification Request Abuse ────────────────────────────────────────
+  try {
+    if (window.Notification && window.Notification.requestPermission) {
+      const _reqPermission = window.Notification.requestPermission.bind(window.Notification);
+      window.Notification.requestPermission = function(...args) {
+        counts.notifications++; scheduleReport();
+        return _reqPermission(...args);
+      };
+    }
+  } catch {}
+
 
   // ── Overlay Warning Injection ──────────────────────────────────────────────
   function injectOverlay({ riskScore, riskLevel, certWarning, domain }) {

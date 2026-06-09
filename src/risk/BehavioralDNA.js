@@ -1,175 +1,126 @@
 /**
- * PRIVISEE-X v4.0
- * Risk: BehavioralDNA
- *
- * Generates a per-site Behavioral Signature and hashes it for:
- *   1. Cross-session site identity tracking
- *   2. Similarity comparison against known malicious clusters
- *   3. Research export
- *
- * Behavioral signature captures:
- *   - Third-party script domains
- *   - Browser API usage (canvas, webgl, audio, fonts, webrtc, battery, storage)
- *   - Network calls (fetch, XHR, WebSocket)
- *   - Fingerprinting intensity cluster (none | light | heavy)
- *
- * Similarity uses cosine distance on the API usage vector against
- * pre-seeded cluster centroids for known tracker / phishing patterns.
+ * PRIVISEE-X v5.0 — BehavioralDNA Fingerprinting
+ * Computes website security & privacy DNA profiles.
+ * Runs cosine similarity matching against known centroids:
+ * - Trusted News & Services
+ * - Adware & Tracking Networks
+ * - Phishing Proxies
+ * - Malware Vectors
  */
 
-'use strict';
+// Vector dimensions:
+// 0: Trackers Count (normalized by 30)
+// 1: Cookies Count (normalized by 50)
+// 2: Fingerprinting Heuristics Count (normalized by 10)
+// 3: Security Headers Score (0-1, normalized from 0-100)
+// 4: TLS strength (1.0 = TLS 1.3, 0.8 = TLS 1.2, 0.0 = HTTP)
+// 5: Ad Count (normalized by 20)
+// 6: Behavioral Anomalies (normalized by 5)
+// 7: Third-Party Connections (normalized by 20)
+const VECTOR_KEYS = [
+  'trackers', 'cookies', 'fingerprints', 'headers', 'tls', 'ads', 'anomalies', 'connections'
+];
 
-// Known malicious cluster centroids (normalized API usage vectors)
-// Each centroid is { canvas, webgl, audio, fonts, webrtc, battery, localStorage, clipboard }
-// Values on 0–1 scale (1 = high usage)
-const KNOWN_CLUSTERS = [
+const CLUSTER_CENTROIDS = [
   {
-    name: 'heavy_fingerprinter',
-    centroid: { canvas: 0.9, webgl: 0.8, audio: 0.7, fonts: 0.8, webrtc: 0.6, battery: 0.5, localStorage: 0.3, clipboard: 0.1 },
-    riskBoost: 25
+    name: 'Trusted Services',
+    description: 'High security headers, modern TLS, very low behavioral anomalies, low tracking density.',
+    vector: { trackers: 0.05, cookies: 0.10, fingerprints: 0.00, headers: 0.90, tls: 1.00, ads: 0.00, anomalies: 0.00, connections: 0.05 }
   },
   {
-    name: 'tracker_analytics',
-    centroid: { canvas: 0.3, webgl: 0.1, audio: 0.0, fonts: 0.2, webrtc: 0.0, battery: 0.0, localStorage: 0.7, clipboard: 0.0 },
-    riskBoost: 15
+    name: 'Adware Network',
+    description: 'High tracker count, heavy cookie density, light fingerprinting, moderate headers, high ads.',
+    vector: { trackers: 0.85, cookies: 0.90, fingerprints: 0.30, headers: 0.50, tls: 0.80, ads: 0.90, anomalies: 0.20, connections: 0.80 }
   },
   {
-    name: 'data_exfiltrator',
-    centroid: { canvas: 0.4, webgl: 0.2, audio: 0.1, fonts: 0.3, webrtc: 0.3, battery: 0.2, localStorage: 0.8, clipboard: 0.7 },
-    riskBoost: 30
+    name: 'Phishing Cluster',
+    description: 'Very low trackers, low cookies, suspicious keywords/behavior, missing HSTS/CSP, poor or missing TLS.',
+    vector: { trackers: 0.02, cookies: 0.05, fingerprints: 0.10, headers: 0.10, tls: 0.10, ads: 0.00, anomalies: 0.80, connections: 0.20 }
   },
   {
-    name: 'clean_site',
-    centroid: { canvas: 0.05, webgl: 0.0, audio: 0.0, fonts: 0.05, webrtc: 0.0, battery: 0.0, localStorage: 0.1, clipboard: 0.0 },
-    riskBoost: 0
+    name: 'Malware Vector',
+    description: 'Drive-by downloads, invalid SSL/TLS, canvas read heuristics, low ads, critical runtime anomalies.',
+    vector: { trackers: 0.10, cookies: 0.05, fingerprints: 0.70, headers: 0.05, tls: 0.00, ads: 0.00, anomalies: 0.95, connections: 0.30 }
   }
 ];
 
-const VECTOR_KEYS = ['canvas', 'webgl', 'audio', 'fonts', 'webrtc', 'battery', 'localStorage', 'clipboard'];
-const MAX_VALS     = { canvas: 20, webgl: 10, audio: 10, fonts: 50, webrtc: 5, battery: 3, localStorage: 30, clipboard: 5 };
-
 /**
- * Build a behavioral signature for a site session
- * @param {object} apiCounts   - { canvas, webgl, audio, fonts, webrtc, battery, localStorage, clipboard }
- * @param {object} networkInfo - { fetchCount, xhrCount, wsCount, thirdPartyDomains: string[] }
+ * Generate a normalized DNA vector from active website stats
  */
-function buildSignature(apiCounts = {}, networkInfo = {}) {
-  const sig = {
-    apiUsage: {
-      canvas:      apiCounts.canvas      || 0,
-      webgl:       apiCounts.webgl       || 0,
-      audio:       apiCounts.audio       || 0,
-      fonts:       apiCounts.fonts       || 0,
-      webrtc:      apiCounts.webrtc      || 0,
-      battery:     apiCounts.battery     || 0,
-      localStorage: apiCounts.localStorage || 0,
-      clipboard:   apiCounts.clipboard   || 0
-    },
-    network: {
-      fetchCount:       networkInfo.fetchCount       || 0,
-      xhrCount:         networkInfo.xhrCount         || 0,
-      wsCount:          networkInfo.wsCount          || 0,
-      thirdPartyDomains: networkInfo.thirdPartyDomains || []
-    },
-    fingerprintCluster: classifyFingerprintIntensity(apiCounts)
+export function buildDNAVector(stats = {}) {
+  return {
+    trackers:     Math.min(1.0, (stats.trackerCount || 0) / 30),
+    cookies:      Math.min(1.0, (stats.cookieCount || 0) / 50),
+    fingerprints: Math.min(1.0, (stats.fingerprintCount || 0) / 10),
+    headers:      Math.min(1.0, (stats.securityHeadersScore || 0) / 100),
+    tls:          stats.isHTTPS ? (stats.tlsVersion === 'TLS 1.3' ? 1.0 : 0.8) : 0.0,
+    ads:          Math.min(1.0, (stats.adCount || 0) / 20),
+    anomalies:    Math.min(1.0, (stats.behavioralAnomaliesCount || 0) / 5),
+    connections:  Math.min(1.0, (stats.connectionsCount || 0) / 20)
   };
-
-  return sig;
 }
 
 /**
- * Classify fingerprint intensity from API usage
+ * Cosine Similarity between two vectors
  */
-function classifyFingerprintIntensity(counts = {}) {
-  const total = (counts.canvas || 0) + (counts.webgl || 0) + (counts.audio || 0) + (counts.fonts || 0) + (counts.webrtc || 0);
-  if (total === 0)   return 'none';
-  if (total <= 3)    return 'light';
-  if (total <= 10)   return 'moderate';
-  return 'heavy';
+export function cosineSimilarity(vecA, vecB) {
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+
+  for (const k of VECTOR_KEYS) {
+    const valA = vecA[k] || 0;
+    const valB = vecB[k] || 0;
+    dotProduct += valA * valB;
+    normA += valA * valA;
+    normB += valB * valB;
+  }
+
+  if (normA === 0 || normB === 0) return 0;
+  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
 /**
- * Compute a simple hash string from a signature (FNV-1a style, 32-bit)
- * Not cryptographic — used for identity/change detection only.
+ * Match a DNA vector against all target centroids
+ * @param {object} vec - The normalized DNA vector
+ * @returns {Array<{ name: string, similarity: number, description: string }>} Sorted matches list
  */
-function hashSignature(signature) {
-  const str = JSON.stringify({
-    api:     signature.apiUsage,
-    cluster: signature.fingerprintCluster,
-    domains: signature.network.thirdPartyDomains.sort()
-  });
+export function calculateSimilarityMatches(vec) {
+  return CLUSTER_CENTROIDS.map(c => {
+    const similarity = cosineSimilarity(vec, c.vector);
+    return {
+      name: c.name,
+      similarity: Math.round(similarity * 100), // percentage
+      description: c.description
+    };
+  }).sort((a, b) => b.similarity - a.similarity);
+}
 
+/**
+ * Create a simple non-cryptographic FNV-1a hash representation of a DNA vector
+ */
+export function generateDNAHash(vec) {
+  const str = JSON.stringify(vec);
   let h = 0x811c9dc5;
   for (let i = 0; i < str.length; i++) {
     h ^= str.charCodeAt(i);
-    h = (h * 0x01000193) >>> 0; // 32-bit unsigned
+    h = (h * 0x01000193) >>> 0;
   }
   return h.toString(16).padStart(8, '0');
 }
 
 /**
- * Normalize API counts to a [0,1] vector
+ * Full DNA analysis execution helper
  */
-function normalize(apiUsage) {
-  const vec = {};
-  for (const key of VECTOR_KEYS) {
-    vec[key] = Math.min(1, (apiUsage[key] || 0) / (MAX_VALS[key] || 1));
-  }
-  return vec;
-}
-
-/**
- * Cosine similarity between two normalized vectors
- */
-function cosineSimilarity(a, b) {
-  let dot = 0, magA = 0, magB = 0;
-  for (const key of VECTOR_KEYS) {
-    dot  += (a[key] || 0) * (b[key] || 0);
-    magA += (a[key] || 0) ** 2;
-    magB += (b[key] || 0) ** 2;
-  }
-  if (magA === 0 || magB === 0) return 0;
-  return dot / (Math.sqrt(magA) * Math.sqrt(magB));
-}
-
-/**
- * Find the closest malicious cluster and return its risk boost
- * @param {object} apiUsage - raw API counts
- * @returns {{ clusterName, similarity, riskBoost }}
- */
-function matchCluster(apiUsage) {
-  const normalized = normalize(apiUsage);
-  let bestMatch = null;
-  let bestSim   = -1;
-
-  for (const cluster of KNOWN_CLUSTERS) {
-    const sim = cosineSimilarity(normalized, cluster.centroid);
-    if (sim > bestSim) {
-      bestSim   = sim;
-      bestMatch = cluster;
-    }
-  }
-
+export function analyzeDNA(stats) {
+  const vector = buildDNAVector(stats);
+  const hash = generateDNAHash(vector);
+  const matches = calculateSimilarityMatches(vector);
+  
   return {
-    clusterName: bestMatch ? bestMatch.name : 'unknown',
-    similarity:  parseFloat(bestSim.toFixed(3)),
-    riskBoost:   (bestSim > 0.75 && bestMatch) ? bestMatch.riskBoost : 0
+    hash,
+    vector,
+    matches,
+    primaryMatch: matches[0] ? matches[0].name : 'Unknown'
   };
 }
-
-/**
- * Full analysis for one domain session
- * @param {string} domain
- * @param {object} apiCounts
- * @param {object} networkInfo
- * @returns {{ signature, hash, clusterMatch }}
- */
-function analyzeDNA(domain, apiCounts, networkInfo) {
-  const signature    = buildSignature(apiCounts, networkInfo);
-  const hash         = hashSignature(signature);
-  const clusterMatch = matchCluster(signature.apiUsage);
-
-  return { domain, signature, hash, clusterMatch, ts: Date.now() };
-}
-
-if (typeof module !== 'undefined') module.exports = { analyzeDNA, buildSignature, hashSignature, matchCluster };

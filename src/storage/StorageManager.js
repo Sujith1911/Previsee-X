@@ -9,7 +9,7 @@
 import { createLogger } from '../core/Logger.js';
 
 const DB_NAME    = 'PriviseeX_DB';
-const DB_VERSION = 8;
+const DB_VERSION = 9;
 
 export class StorageManager {
   constructor() {
@@ -105,6 +105,32 @@ export class StorageManager {
           brStore.createIndex('timestamp', 'timestamp', { unique: false });
           brStore.createIndex('type',      'type',      { unique: false });
           this.logger.info('Created "blockedRequests" store for Privacy Firewall');
+        }
+
+        // ── Threat Intel store (v9) ──────────────────────────────────────────
+        if (!db.objectStoreNames.contains('threatIntel')) {
+          const tiStore = db.createObjectStore('threatIntel', { keyPath: 'domain' });
+          tiStore.createIndex('threatScore', 'threatScore', { unique: false });
+        }
+
+        // ── Attack Surface store (v9) ────────────────────────────────────────
+        if (!db.objectStoreNames.contains('attackSurface')) {
+          const asStore = db.createObjectStore('attackSurface', { keyPath: 'domain' });
+          asStore.createIndex('score', 'score', { unique: false });
+        }
+
+        // ── Community Reports store (v9) ─────────────────────────────────────
+        if (!db.objectStoreNames.contains('communityReports')) {
+          const crStore = db.createObjectStore('communityReports', { keyPath: 'id', autoIncrement: true });
+          crStore.createIndex('domain', 'domain', { unique: false });
+          crStore.createIndex('timestamp', 'timestamp', { unique: false });
+        }
+
+        // ── Behavior Logs store (v9) ─────────────────────────────────────────
+        if (!db.objectStoreNames.contains('behaviorLogs')) {
+          const blStore = db.createObjectStore('behaviorLogs', { keyPath: 'id', autoIncrement: true });
+          blStore.createIndex('domain', 'domain', { unique: false });
+          blStore.createIndex('timestamp', 'timestamp', { unique: false });
         }
       };
     });
@@ -316,6 +342,8 @@ export class StorageManager {
     await deleteByTimestamp('riskHistory', oneWeekAgo).catch(() => {});
     await deleteByTimestamp('anomalies', oneMonthAgo).catch(() => {});
     await deleteByTimestamp('blockedRequests', oneMonthAgo).catch(() => {});
+    await deleteByTimestamp('behaviorLogs', oneMonthAgo).catch(() => {});
+    await deleteByTimestamp('communityReports', oneMonthAgo * 3).catch(() => {});
 
     // Clean stale trackers
     try {
@@ -341,7 +369,7 @@ export class StorageManager {
     await this._ensureDB();
     const stores = storeName
       ? [storeName]
-      : ['sites', 'trackers', 'riskHistory', 'anomalies', 'blockedRequests'];
+      : ['sites', 'trackers', 'riskHistory', 'anomalies', 'blockedRequests', 'threatIntel', 'attackSurface', 'communityReports', 'behaviorLogs'];
     return Promise.all(stores.map(name =>
       new Promise((resolve) => {
         try {

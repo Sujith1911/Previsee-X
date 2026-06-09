@@ -29,13 +29,14 @@
 
   // ── Collect Full v4.0 Research Snapshot ────────────────────────────────────
   async function collectSnapshot() {
-    const [tabRes, secRes, advRes, graphRes, histSummaryRes, blRes] = await Promise.all([
+    const [tabRes, secRes, advRes, graphRes, histSummaryRes, blRes, expRes] = await Promise.all([
       msg({ action: 'GET_RESEARCH_DATA' }),
       msg({ action: 'GET_SECURITY_LAYER' }),
       msg({ action: 'GET_ADVISORY' }),
       msg({ action: 'GET_GRAPH_DATA' }),
       msg({ action: 'GET_RISK_HISTORY', hours: 168 }), // 7 days
-      msg({ action: 'GET_BLOCKED_LOG' })
+      msg({ action: 'GET_BLOCKED_LOG' }),
+      msg({ action: 'GET_EXPLAINABILITY' })
     ]);
 
     const domain = tabRes.domain || 'unknown';
@@ -58,7 +59,7 @@
     return {
       meta: {
         exportedAt:   new Date().toISOString(),
-        tool:         'PRIVISEE-X v4.0 — WebAdvisor Mode',
+        tool:         'PRIVISEE-X v5.0 — Browser Threat Intelligence Platform',
         domain,
         capturedUrl:  tabRes.domain ? `https://${tabRes.domain}` : 'unknown'
       },
@@ -70,7 +71,7 @@
         webAdvisorStatus:   tabRes.webAdvisorStatus   ?? null,
         currentSessionRisk: tabRes.currentSessionRisk ?? null,
         historicalRisk:     tabRes.historicalRisk     ?? null,
-        weights: { behavioral: '35%', static: '30%', reputation: '20%', securityLayer: '15%' },
+        weights:            tabRes.weights            || null,
         components: {
           behavioralScore:    tabRes.behavioralScore    ?? null,
           staticScore:        tabRes.staticScore        ?? null,
@@ -139,7 +140,10 @@
       trackerGraph: {
         nodes: graphRes.nodes || [],
         links: graphRes.links || []
-      }
+      },
+      
+      // ── Explainability ───────────────────────────────────────────────
+      explainability: expRes?.explanation || null
     };
   }
 
@@ -179,9 +183,9 @@
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
           <div>
             <h3 style="font-size:15px;font-weight:700;color:#e2e8f0;margin-bottom:2px">
-              🔬 Research Mode ${badge('v4.0','#6366f1')}
+              🔬 Research Mode ${badge('v5.0','#6366f1')}
             </h3>
-            <p style="font-size:12px;color:#64748b">Full raw data snapshot — v4.0 WebAdvisor format</p>
+            <p style="font-size:12px;color:#64748b">Full raw data snapshot — v5.0 SOC Threat Intelligence format</p>
           </div>
           <div style="display:flex;gap:8px">
             <button id="rmRefresh" style="padding:6px 14px;background:#1e2235;border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#e2e8f0;cursor:pointer;font-size:12px;font-weight:600">🔄 Refresh</button>
@@ -191,8 +195,9 @@
         </div>
 
         <div id="rmSections" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px"></div>
+        <div id="rmSectionsSec" style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:14px"></div>
 
-        <div id="rmLoading" style="text-align:center;padding:40px;color:#64748b">Collecting v4.0 data…</div>
+        <div id="rmLoading" style="text-align:center;padding:40px;color:#64748b">Collecting v5.0 data…</div>
         <pre id="rmPre" style="display:none;background:#0d0f18;border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:16px;font-size:11px;color:#94a3b8;overflow:auto;max-height:480px;white-space:pre-wrap;word-break:break-all"></pre>
         <div id="rmMsg" style="display:none;text-align:center;padding:8px;font-size:12px;border-radius:6px;margin-top:8px"></div>
       </div>
@@ -248,9 +253,22 @@
         card('Behavioral DNA', [
           ['DNA Hash',    d.hash ? d.hash.slice(0, 16) + '…' : '—'],
           ['Cluster',     d.clusterMatch?.name ?? '—'],
-          ['Similarity',  d.clusterMatch?.similarity ?? '—'],
+          ['Similarity',  d.clusterMatch?.similarity ? `${d.clusterMatch.similarity}%` : '—'],
           ['Risk Boost',  d.clusterMatch?.riskBoost != null ? `+${d.clusterMatch.riskBoost}` : '—']
         ]);
+        
+      if (snap.explainability) {
+        const exp = snap.explainability;
+        container.querySelector('#rmSectionsSec').innerHTML =
+          card('Explainability Audit Summary', [
+            ['Narrative Summary', exp.summary || '—'],
+            ['Audit Confidence', `${exp.confidence ?? 0}%`],
+            ['Evidence Points', exp.evidenceCount ?? 0],
+            ...exp.contributors.map(c => [c.label, `+${c.contribution} pts (${c.impact} impact)`])
+          ]);
+      } else {
+        container.querySelector('#rmSectionsSec').innerHTML = '';
+      }
     }
 
     async function refresh() {

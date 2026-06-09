@@ -13,6 +13,7 @@
     "alarms",
     "clipboardRead",
     "clipboardWrite",
+    "downloads",
     "declarativeNetRequest",
     "declarativeNetRequestFeedback",
     "declarativeNetRequestWithHostAccess"
