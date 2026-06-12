@@ -153,15 +153,45 @@ git clone https://github.com/Sujith1911/Previsee-X.git
 ```
 
 #### 2. Load the Unpacked Extension
-* **Chrome / Edge / Brave / Opera**:
+
+If you encounter any manifest loading issues while selecting `src/` (or if you prefer a clean production-ready build), use the pre-built **`dist/`** directory. It contains all updated, synchronized, and validated production files.
+
+* **Chrome / Edge / Brave / Opera / Chromium**:
   1. Open the extensions page (`chrome://extensions`, `edge://extensions`, or `brave://extensions`).
   2. Enable **Developer Mode** (via the toggle switch).
   3. Click the **Load Unpacked** button.
-  4. Select the **`src/` folder** inside the cloned repository directory.
+  4. Select the **`dist/` folder** (or `src/` if preferred) inside the cloned repository directory.
 * **Firefox**:
   1. Navigate to `about:debugging`.
   2. Click **This Firefox** on the left menu.
-  3. Click **Load Temporary Add-on...** and select `manifest.json` inside the **`src/` folder**.
+  3. Click **Load Temporary Add-on...** and select `manifest.json` inside the **`dist/` folder** (or `src/` if preferred).
+
+---
+
+### 📱 iOS & macOS Safari Deployment
+
+Safari on Apple devices (iOS, iPadOS, and macOS) uses a native App Store wrapper for extensions. You can convert and run PRIVISEE-X locally on your iPhone, iPad, or Mac:
+
+#### 1. Requirements
+* A Mac computer with **Xcode** (free on the Mac App Store) installed.
+* An Apple Developer account (a free personal developer account is sufficient for local debugging).
+
+#### 2. Convert the Extension
+Open the Terminal on your Mac and run the Safari converter tool pointing to the `dist/` folder:
+```bash
+xcrun safari-web-extension-converter /path/to/Previsee-X/dist
+```
+This tool will parse the Chrome manifest and generate an Xcode project configured for Safari.
+
+#### 3. Build & Run in Xcode
+1. Xcode will open the converted project automatically.
+2. Select your signing team in **Signing & Capabilities** (select your personal account).
+3. Connect your iPhone or iPad via USB, or select your Mac as the active run destination.
+4. Click the **Play (Run)** button to compile and install the extension app on your target device.
+
+#### 4. Enable in Safari Settings
+* **On iOS/iPadOS**: Go to **Settings** → **Safari** → **Extensions**. Toggle **PRIVISEE-X** to **ON**, and set permission to *Always Allow* for all websites.
+* **On macOS**: Open Safari, go to **Safari Settings (Preferences)** → **Extensions**, check the box next to **PRIVISEE-X**, and allow it for websites.
 
 ---
 

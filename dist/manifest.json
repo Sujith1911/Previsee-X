@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "PRIVISEE-X",
+  "version": "5.0.0",
+  "description": "PRIVISEE-X v5.0 — WebAdvisor Mode: Certificate Warning Engine, Predictive Risk Advisor, Explainable Privacy Firewall, Advanced Filters, D3 Tracker Graph, Smart Suggestions. 100% local, zero data transmission.",
+  "permissions": [
+    "storage",
+    "cookies",
+    "webRequest",
+    "webNavigation",
+    "scripting",
+    "tabs",
+    "alarms",
+    "clipboardRead",
+    "clipboardWrite",
+    "downloads",
+    "declarativeNetRequest",
+    "declarativeNetRequestFeedback",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "options_page": "dashboard.html",
+  "web_accessible_resources": [
+    {
+      "resources": ["models/*", "models/tracker_classifier/*", "lib/*", "security/*", "risk/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

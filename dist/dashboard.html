@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+  <title>PRIVISEE-X Dashboard</title>
+  <script src="lib/chart.min.js"></script>
+  <script src="lib/d3.min.js"></script>
+  <style>
+    *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+    :root{
+      --bg:#0d0f18;--s1:#141721;--s2:#1e2235;--s3:#252a40;
+      --acc:#6366f1;--a2:#8b5cf6;
+      --text:#e2e8f0;--muted:#64748b;--border:rgba(255,255,255,0.07);
+      --green:#10b981;--yellow:#f59e0b;--orange:#f97316;--red:#ef4444;--blue:#3b82f6;
+    }
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px;}
+
+    /* Header */
+    .hdr{background:var(--s1);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;gap:12px;}
+    .brand h1{font-size:18px;font-weight:700;background:linear-gradient(135deg,#6366f1,#8b5cf6);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+    .brand p{font-size:11px;color:var(--muted);}
+    .hdr-right{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+    .live{background:#10b98118;color:var(--green);font-size:10px;padding:3px 8px;border-radius:99px;font-weight:700;border:1px solid #10b98130;animation:pulse 2s infinite;}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+
+    /* Buttons */
+    .btn{padding:6px 14px;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:12px;transition:all .15s;white-space:nowrap;}
+    .btn-pri  {background:var(--acc);color:white;}
+    .btn-sec  {background:var(--s2);color:var(--text);}
+    .btn-danger{background:var(--red);color:white;}
+    .btn-trust{background:#10b98118;color:var(--green);border:1px solid #10b98130;}
+    .btn:hover{opacity:.82;transform:translateY(-1px);}
+    .btn-sm{padding:3px 9px;font-size:11px;border-radius:6px;}
+
+    /* ── Site Filter Bar ── */
+    .sitefilter-bar{background:var(--s1);border-bottom:1px solid var(--border);padding:10px 24px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+    .sitefilter-bar label{font-size:12px;color:var(--muted);font-weight:600;white-space:nowrap;}
+    .site-sel{background:var(--s2);border:1px solid var(--border);color:var(--text);padding:7px 12px;border-radius:8px;font-size:13px;outline:none;min-width:220px;cursor:pointer;}
+    .site-sel:focus{border-color:var(--acc);}
+    #clearFilter{font-size:11px;color:var(--acc);background:transparent;border:none;cursor:pointer;padding:0;text-decoration:underline;}
+
+    /* Main */
+    .main{max-width:1440px;margin:0 auto;padding:20px 24px;}
+
+    /* Stats */
+    .stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:20px;}
+    .sc{background:var(--s1);border:1px solid var(--border);border-radius:11px;padding:14px 16px;transition:.2s;}
+    .sc:hover{transform:translateY(-2px);}
+    .sc .val{font-size:26px;font-weight:700;}
+    .sc .lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:3px;}
+
+    /* BLOCKED ADS card — prominent */
+    .sc.blocked-card{border-color:#ef444430;background:linear-gradient(135deg,#1a0d0d,#1e1222);}
+    .sc.blocked-card .val{color:var(--red);}
+
+    /* Graph */
+    .graph-card{background:var(--s1);border:1px solid var(--border);border-radius:11px;padding:16px 20px;margin-bottom:20px;}
+    .graph-card h3{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;}
+    #riskChart{width:100%!important;height:160px!important;}
+
+    /* Tabs */
+    .tabs{display:flex;border-bottom:1px solid var(--border);margin-bottom:16px;}
+    .tab-btn{padding:9px 18px;background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:13px;font-weight:600;border-bottom:2px solid transparent;transition:all .15s;}
+    .tab-btn.active{color:var(--acc);border-bottom-color:var(--acc);}
+    .tab-btn:hover:not(.active){color:var(--text);}
+    .tab-panel{display:none;}
+    .tab-panel.active{display:block;}
+
+    /* Toolbar */
+    .toolbar{display:flex;align-items:center;gap:8px;margin-bottom:11px;flex-wrap:wrap;}
+    .srch{background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-size:13px;width:200px;outline:none;}
+    .srch:focus{border-color:var(--acc);}
+    .cnt{font-size:12px;color:var(--muted);margin-left:auto;}
+    select.mini-sel{background:var(--s1);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:8px;font-size:12px;outline:none;}
+
+    /* Table */
+    .tw{background:var(--s1);border:1px solid var(--border);border-radius:11px;overflow:auto;}
+    table{width:100%;border-collapse:collapse;}
+    thead th{padding:9px 13px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;text-align:left;border-bottom:1px solid var(--border);background:var(--s2);white-space:nowrap;}
+    tbody tr{border-bottom:1px solid var(--border);transition:background .1s;}
+    tbody tr:last-child{border-bottom:none;}
+    tbody tr:hover{background:rgba(255,255,255,0.025);}
+    td{padding:9px 13px;vertical-align:middle;}
+
+    /* Badges */
+    .badge{display:inline-block;padding:2px 8px;border-radius:5px;font-size:11px;font-weight:700;}
+    .b-safe{background:#10b98118;color:#10b981;}
+    .b-low{background:#3b82f618;color:#60a5fa;}
+    .b-mod{background:#f59e0b18;color:#f59e0b;}
+    .b-high{background:#ef444418;color:#ef4444;}
+    .b-crit{background:#7f1d1d25;color:#fca5a5;}
+
+    /* Expiry pills */
+    .ep{font-size:11px;padding:2px 8px;border-radius:99px;font-weight:600;}
+    .ep-sess{background:#6366f118;color:#818cf8;}
+    .ep-ok  {background:#10b98118;color:#10b981;}
+    .ep-soon{background:#f59e0b18;color:#f59e0b;}
+    .ep-exp {background:#ef444418;color:#ef4444;}
+
+    /* Empty */
+    .empty-state{text-align:center;padding:44px 20px;opacity:.5;}
+    .empty-state .ico{font-size:40px;margin-bottom:10px;}
+
+    /* Action cell */
+    .ac{display:flex;gap:5px;align-items:center;}
+
+    /* Section header (inside tab) */
+    .section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+    .section-header h4{font-size:13px;font-weight:700;color:var(--text);}
+
+    /* Scrollbar */
+    ::-webkit-scrollbar{width:5px;height:5px;}
+    ::-webkit-scrollbar-track{background:transparent;}
+    ::-webkit-scrollbar-thumb{background:var(--s3);border-radius:3px;}
+
+    /* Graph Panel */
+    #graphPanel{width:100%;height:520px;border-radius:8px;overflow:hidden;position:relative;}
+    #graphPanel svg text{pointer-events:none;}
+    .graph-legend{position:absolute;top:12px;left:12px;display:flex;gap:14px;background:rgba(15,23,42,0.7);padding:6px 12px;border-radius:6px;border:1px solid var(--border);}
+    .graph-legend span{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px;}
+    .legend-dot{width:8px;height:8px;border-radius:50%;display:inline-block;}
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<header class="hdr">
+  <div class="brand"><h1>🛡️ PRIVISEE-X</h1><p id="lastUpdated">Privacy Intelligence Dashboard v5.0 — Advanced Filters Mode</p></div>
+  <div class="hdr-right">
+    <span class="live">● LIVE</span>
+    <input class="srch" id="globalSearch" type="text" placeholder="🔎 Search domains, trackers, blocked…" style="width:220px">
+    <button class="btn btn-sec" id="refreshBtn">🔄 Refresh</button>
+    <button class="btn btn-sec" id="exportBtn">📥 Export JSON</button>
+    <button class="btn btn-danger" id="clearBtn">🗑️ Clear All</button>
+  </div>
+</header>
+
+<!-- Global site filter bar -->
+<div class="sitefilter-bar">
+  <label>🌐 Filter all tabs by site:</label>
+  <select class="site-sel" id="globalSiteFilter">
+    <option value="">All Sites</option>
+  </select>
+  <button id="clearFilter">✕ Clear filter</button>
+  <span id="filterInfo" style="font-size:12px;color:var(--muted)"></span>
+</div>
+
+<!-- Advanced filter bar (v5.0) -->
+<div class="sitefilter-bar" style="gap:8px;flex-wrap:wrap;border-top:none;padding-top:6px;">
+  <label style="font-size:11px;color:var(--muted)">Risk Level:</label>
+  <select class="site-sel" id="filterRiskLevel" style="min-width:140px;font-size:12px;padding:5px 9px;">
+    <option value="all">All Levels</option>
+    <option value="safe">Safe (0–15)</option>
+    <option value="moderate">Moderate (16–60)</option>
+    <option value="high">High (61–80)</option>
+    <option value="critical">Critical (81+)</option>
+  </select>
+  <label style="font-size:11px;color:var(--muted)">Date:</label>
+  <select class="site-sel" id="filterDateRange" style="min-width:130px;font-size:12px;padding:5px 9px;">
+    <option value="all">All Time</option>
+    <option value="today">Today</option>
+    <option value="7d">Last 7 Days</option>
+    <option value="30d">Last 30 Days</option>
+  </select>
+  <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px;cursor:pointer;">
+    <input type="checkbox" id="filterTrustedOnly"> Trusted only
+  </label>
+  <label style="font-size:11px;color:var(--muted)">Cert:</label>
+  <select class="site-sel" id="filterCertStatus" style="min-width:130px;font-size:12px;padding:5px 9px;">
+    <option value="all">All Certs</option>
+    <option value="clean">✅ Clean</option>
+    <option value="warning">⚠️ Warning</option>
+    <option value="invalid">🚫 Invalid</option>
+  </select>
+  <button id="resetFiltersBtn" style="font-size:11px;color:var(--acc);background:transparent;border:none;cursor:pointer;padding:0;text-decoration:underline;">↺ Reset filters</button>
+</div>
+
+<main class="main">
+
+  <!-- Stats row -->
+  <div class="stats">
+    <div class="sc"><div class="val" id="st-sites">—</div><div class="lbl">Sites</div></div>
+    <div class="sc"><div class="val" id="st-trackers">—</div><div class="lbl">Trackers</div></div>
+    <div class="sc blocked-card">
+      <div class="val" id="st-blocked">—</div><div class="lbl">🚫 Ads Blocked</div>
+    </div>
+    <div class="sc" style="border-color:#f59e0b30;background:linear-gradient(135deg,#1a150d,#1e1a0d)">
+      <div class="val" id="st-trackers-blocked" style="color:var(--yellow)">—</div><div class="lbl">📡 Trackers Blkd</div>
+    </div>
+    <div class="sc"><div class="val" id="st-ads" style="color:var(--orange)">—</div><div class="lbl">Ads Detected</div></div>
+    <div class="sc"><div class="val" id="st-cookies">—</div><div class="lbl">Cookies</div></div>
+    <div class="sc"><div class="val" id="st-fp">—</div><div class="lbl">Fingerprinting</div></div>
+    <div class="sc"><div class="val" id="st-risk">—</div><div class="lbl">Avg Risk</div></div>
+    <div class="sc"><div class="val" id="st-highrisk" style="color:var(--red)">—</div><div class="lbl">High-Risk</div></div>
+  </div>
+
+  <!-- Risk chart -->
+  <div class="graph-card">
+    <h3 style="display:flex;align-items:center;justify-content:space-between;">
+      <span>📈 Risk Timeline</span>
+      <span style="display:flex;align-items:center;gap:6px;">
+        <label style="font-size:10px;color:var(--muted);font-weight:600;">Range:</label>
+        <select class="mini-sel" id="filterChartRange" style="font-size:11px;padding:3px 7px;">
+          <option value="24h">Today (24h)</option>
+          <option value="7d">Last 7 Days</option>
+          <option value="30d">Last 30 Days</option>
+          <option value="all">All Time</option>
+        </select>
+      </span>
+    </h3>
+    <canvas id="riskChart"></canvas>
+    <div id="chartMsg" style="text-align:center;color:var(--muted);font-size:12px;display:none;padding-top:8px">
+      No browsing data yet. Browse websites then refresh.
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="sites">🌐 Sites</button>
+    <button class="tab-btn" data-tab="cookies">🍪 Cookies</button>
+    <button class="tab-btn" data-tab="trackers">🕵️ Trackers</button>
+    <button class="tab-btn" data-tab="ads">🚫 Blocked Ads</button>
+    <button class="tab-btn" data-tab="blocked">🔥 Firewall Log</button>
+    <button class="tab-btn" data-tab="graph">🕸️ Tracker Graph</button>
+    <button class="tab-btn" data-tab="research">🔬 Research</button>
+  </div>
+
+  <!-- ── Sites ── -->
+  <div class="tab-panel active" id="tab-sites">
+    <div class="toolbar">
+      <input class="srch" id="siteSearch" type="text" placeholder="🔍 Search domain…">
+      <span class="cnt" id="siteCnt"></span>
+    </div>
+    <div class="tw">
+      <table><thead><tr>
+        <th>Domain</th><th>Risk</th><th>Trackers</th><th>Blocked Ads</th>
+        <th>Cookies</th><th>Fingerprinting</th><th>Last Visit</th><th>Actions</th>
+      </tr></thead>
+      <tbody id="sitesBody"></tbody></table>
+    </div>
+  </div>
+
+  <!-- ── Cookies ── -->
+  <div class="tab-panel" id="tab-cookies">
+    <div class="toolbar">
+      <input class="srch" id="ckSearch" type="text" placeholder="🔍 Search name or domain…">
+      <select class="mini-sel" id="ckSort">
+        <option value="domain">Sort: Domain</option>
+        <option value="expiry_soon">Sort: Expiring Soon</option>
+        <option value="expiry_late">Sort: Not Expiring</option>
+        <option value="name">Sort: Name</option>
+      </select>
+      <span class="cnt" id="ckCnt"></span>
+      <button class="btn btn-sm btn-danger" id="deleteAllCookiesForSite" style="display:none">🗑 Delete All for Site</button>
+    </div>
+    <div class="tw">
+      <table><thead><tr>
+        <th>Domain</th><th>Cookie Name</th><th>Expiry Date</th><th>Days Left</th>
+        <th>Secure</th><th>HttpOnly</th><th>SameSite</th><th>Actions</th>
+      </tr></thead>
+      <tbody id="ckBody"></tbody></table>
+    </div>
+  </div>
+
+  <!-- ── Trackers ── -->
+  <div class="tab-panel" id="tab-trackers">
+    <div class="toolbar">
+      <input class="srch" id="trSearch" type="text" placeholder="🔍 Search tracker domain…">
+      <span class="cnt" id="trCnt"></span>
+      <button class="btn btn-sm btn-danger" id="deleteAllTrackersForSite" style="display:none">🗑 Delete All for Site</button>
+    </div>
+    <div class="tw">
+      <table><thead><tr>
+        <th>Site</th><th>Tracker Domain</th><th>Category</th>
+        <th>Hits</th><th>Last Seen</th><th>Actions</th>
+      </tr></thead>
+      <tbody id="trBody"></tbody></table>
+    </div>
+  </div>
+
+  <!-- ── Blocked Ads ── -->
+  <div class="tab-panel" id="tab-ads">
+    <div class="toolbar">
+      <input class="srch" id="adSearch" type="text" placeholder="🔍 Search site…">
+      <span class="cnt" id="adCnt"></span>
+    </div>
+    <div class="tw">
+      <table><thead><tr>
+        <th>Site</th><th>🚫 Blocked Ads</th><th>📡 Total Trackers</th>
+        <th>Risk</th><th>Actions</th>
+      </tr></thead>
+      <tbody id="adBody"></tbody></table>
+    </div>
+  </div>
+
+  <!-- ── Firewall Log ── -->
+  <div class="tab-panel" id="tab-blocked">
+    <div class="toolbar">
+      <input class="srch" id="blSearch" type="text" placeholder="🔍 Search domain or URL…">
+      <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px;margin-left:auto">
+        <input type="checkbox" id="showFullURLs"> Show Full URLs
+      </label>
+      <button class="btn btn-sm btn-danger" id="clearBlockedBtn">🗑 Clear Log</button>
+      <span class="cnt" id="blCnt"></span>
+    </div>
+    <div class="tw">
+      <table><thead><tr>
+        <th>Domain</th><th>Type</th><th>URL</th><th>Time</th>
+      </tr></thead>
+      <tbody id="blBody"></tbody></table>
+    </div>
+  </div>
+
+  <!-- ── Tracker Graph ── -->
+  <div class="tab-panel" id="tab-graph">
+    <div class="toolbar" style="margin-bottom:12px">
+      <span style="font-size:13px;font-weight:600">🕸️ Tracker Connection Graph</span>
+      <span class="cnt" style="font-size:12px">Indigo = visited site &nbsp;|&nbsp; Orange = tracker hub. Node size = hit count. Drag nodes to reposition.</span>
+    </div>
+    <div class="tw" style="padding:0">
+      <div id="graphPanel">
+        <div class="empty-state"><div class="ico">🕸️</div>Click this tab after browsing to visualize tracker connections.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Research Mode ── -->
+  <div class="tab-panel" id="tab-research">
+    <div id="researchPanelContainer"></div>
+  </div>
+
+</main>
+
+<script src="ui/ResearchMode.js"></script>
+
+<script src="ui/DashboardController.js"></script>
+</body>
+</html>

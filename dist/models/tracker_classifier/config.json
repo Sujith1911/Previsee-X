@@ -1,0 +1,29 @@
+{
+  "model_url": "./model.json",
+  "model_type": "RandomForest",
+  "threshold": 0.5,
+  "description": "Random Forest tracker classifier \u2014 PRIVISEE-X v2.0.0",
+  "input_features": [
+    "domainLength",
+    "subdomainCount",
+    "hasNumbers",
+    "tldType",
+    "pathDepth",
+    "queryParams",
+    "hasTrackingParams",
+    "isThirdParty",
+    "resourceType",
+    "domainEntropy",
+    "tokenCount",
+    "digitRatio",
+    "specialCharRatio"
+  ],
+  "output_classes": [
+    "advertising",
+    "analytics",
+    "benign",
+    "fingerprinting",
+    "social"
+  ],
+  "benign_class_index": 2
+}

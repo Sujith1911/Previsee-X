@@ -16,7 +16,6 @@ env/
 venv/
 .venv/
 *.egg-info/
-dist/
 build/
 *.egg
 .eggs/
@@ -59,7 +58,6 @@ desktop.ini
 .classpath
 
 # Extension build artifacts
-dist/
 build/
 *.crx
 *.pem
