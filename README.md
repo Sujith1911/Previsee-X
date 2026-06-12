@@ -143,20 +143,45 @@ python ml/run_all.py
 
 ## Installation & Setup
 
-### Quick Install (Recommended)
+### Direct Git Install & Multi-Laptop Deployment (No Build Needed)
 
-1. **Clone the repo**
+Since all core security and risk engines run entirely locally on raw files, you can deploy the extension to any laptop or browser directly from this repository without compiling or running build scripts.
+
+#### 1. Clone the repository
+```bash
+git clone https://github.com/Sujith1911/Previsee-X.git
+```
+
+#### 2. Load the Unpacked Extension
+* **Chrome / Edge / Brave / Opera**:
+  1. Open the extensions page (`chrome://extensions`, `edge://extensions`, or `brave://extensions`).
+  2. Enable **Developer Mode** (via the toggle switch).
+  3. Click the **Load Unpacked** button.
+  4. Select the **`src/` folder** inside the cloned repository directory.
+* **Firefox**:
+  1. Navigate to `about:debugging`.
+  2. Click **This Firefox** on the left menu.
+  3. Click **Load Temporary Add-on...** and select `manifest.json` inside the **`src/` folder**.
+
+---
+
+### 🔄 Updating & Tracking Code Changes
+
+#### How to update the extension:
+Whenever a new update is pushed to the repository, pull the latest changes on your laptops:
+```bash
+git pull origin main
+```
+Then, simply click the **Reload** (circular arrow) icon on the **PRIVISEE-X** card in your browser's extension manager. The updates will apply instantly!
+
+#### How to track recent updates:
+If you or your friends want to see what was changed in the latest code pushes:
+1. **View Git Commit History**: Run this command to inspect recent updates directly from the CLI:
    ```bash
-   git clone https://github.com/Sujith1911/Previsee-X.git
+   git log --oneline -n 5
    ```
-
-2. **Load in Chrome**
-   - Navigate to `chrome://extensions`
-   - Enable **Developer Mode** (toggle top-right)
-   - Click **Load Unpacked** → Select the `src/` folder
-   - Pin the PRIVISEE-X icon to your toolbar
-
-3. **Browse normally** — the extension starts analyzing immediately.
+   Or visit the [GitHub Commit History](https://github.com/Sujith1911/Previsee-X/commits/main).
+2. **Read the Changelog**: Major updates, fixed bugs, and newly introduced features are documented in [CHANGELOG.md](file:///d:/Privisee-x/CHANGELOG.md).
 
 ---
 
