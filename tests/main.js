@@ -10,6 +10,8 @@ import { BehavioralAnalysisEngine } from '../src/detectors/BehavioralAnalysisEng
 import { AdaptiveWeightingEngine } from '../src/risk/AdaptiveWeightingEngine.js';
 import { ThreatProjectionEngine } from '../src/risk/ThreatProjectionEngine.js';
 import { GraphEngine } from '../src/graph/GraphEngine.js';
+import { buildResearchAudit, stableStringify } from '../src/research/ResearchAudit.js';
+import { buildRiskLifecycle } from '../src/risk/RiskLifecycleEngine.js';
 
 // Setup Mock/Global Objects
 global.chrome = {
@@ -211,7 +213,29 @@ async function runTests() {
   assert(projResult2.trend30d === 'STABLE', 'Stable risk score history should forecast STABLE');
   console.log('✅ ThreatProjectionEngine tests passed');
 
-  // 6. GraphEngine Tests
+  // 6. RiskLifecycleEngine Tests
+  const lifecycleNow = Date.UTC(2026, 0, 10);
+  const lifecycle = buildRiskLifecycle({
+    domain: 'example.com',
+    currentScore: 82,
+    now: lifecycleNow,
+    history: [
+      { score: 12, timestamp: lifecycleNow - 80 * 86400000 },
+      { score: 20, timestamp: lifecycleNow - 25 * 86400000 },
+      { score: 35, timestamp: lifecycleNow - 6 * 86400000 },
+      { score: 55, timestamp: lifecycleNow - 2 * 86400000 },
+      { score: 78, timestamp: lifecycleNow - 2 * 3600000 }
+    ],
+    components: { behavioral: 70, static: 40, reputation: 60, security: 0, threatIntel: 90 }
+  });
+  assert(lifecycle.windows['90d'].count === 5, 'RiskLifecycle should retain 90d baseline samples');
+  assert(lifecycle.windows['7d'].count === 3, 'RiskLifecycle should compute 7d short-term window');
+  assert(lifecycle.trend === 'RISING_FAST' || lifecycle.trend === 'RISING', `RiskLifecycle should detect rising trend. Got: ${lifecycle.trend}`);
+  assert(lifecycle.recommendedAction === 'BLOCK_OR_REVIEW_BEFORE_CONTINUING', 'High lifecycle risk should recommend review before continuing');
+  assert(lifecycle.retentionPolicy.recommendedHistoryDays === 90, 'RiskLifecycle should document 90-day history policy');
+  console.log('✅ RiskLifecycleEngine tests passed');
+
+  // 7. GraphEngine Tests
   const graph = new GraphEngine();
   await graph.init();
 
@@ -237,6 +261,36 @@ async function runTests() {
   await graph.detectEcosystemCommunities(5);
   assert(trackerNode.community !== undefined, 'Community grouping must be defined');
   console.log('✅ GraphEngine tests passed');
+
+  // 8. ResearchAudit Tests
+  const canonicalA = stableStringify({ b: 2, a: { z: 1, y: 0 } });
+  const canonicalB = stableStringify({ a: { y: 0, z: 1 }, b: 2 });
+  assert(canonicalA === canonicalB, 'ResearchAudit stableStringify must be deterministic');
+
+  const audit = buildResearchAudit({
+    domain: 'example.com',
+    riskHistory: [
+      { domain: 'example.com', score: 10, timestamp: 1000 },
+      { domain: 'example.com', score: 20, timestamp: 86401000 },
+      { domain: 'example.com', score: 30, timestamp: 172801000 }
+    ],
+    blockedRequests: [
+      { domain: 'tracker.com', type: 'tracker', timestamp: 1000 },
+      { domain: 'ads.example', type: 'ad', timestamp: 2000 }
+    ],
+    graph: {
+      nodes: [{ id: 'example.com', type: 'site' }, { id: 'tracker.com', type: 'tracker' }],
+      links: [{ source: 'example.com', target: 'tracker.com', value: 2 }]
+    },
+    staticBreakdown: [{ factor: 'Missing CSP', delta: 10 }],
+    rawHeaders: { 'content-security-policy': 'default-src https:' },
+    behavioralSignature: { apiCounts: { canvas: 1 } },
+    explainability: { evidenceCount: 2 }
+  });
+  assert(audit.integrity.hash.length === 8, 'ResearchAudit integrity hash must be 8 hex chars');
+  assert(audit.dataQuality.coverageScore === 100, `ResearchAudit full sample should reach 100 coverage. Got: ${audit.dataQuality.coverageScore}`);
+  assert(audit.sampling.riskHistory.slopePerDay > 0, 'ResearchAudit should compute positive risk trend slope');
+  console.log('✅ ResearchAudit tests passed');
 
   console.log('');
   console.log('============================================================');

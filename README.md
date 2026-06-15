@@ -147,10 +147,18 @@ python ml/run_all.py
 
 Since all core security and risk engines run entirely locally on raw files, you can deploy the extension to any laptop or browser directly from this repository without compiling or running build scripts.
 
-#### 1. Clone the repository
-```bash
-git clone https://github.com/Sujith1911/Previsee-X.git
-```
+#### 1. Clone or Download the Repository
+
+* **Option A (With Git installed):**
+  Run this command in your terminal:
+  ```bash
+  git clone https://github.com/Sujith1911/Previsee-X.git
+  ```
+* **Option B (Without Git installed):**
+  1. Visit the repository on GitHub: [https://github.com/Sujith1911/Previsee-X](https://github.com/Sujith1911/Previsee-X)
+  2. Click the green **Code** button at the top-right.
+  3. Click **Download ZIP** in the dropdown menu.
+  4. Extract the downloaded ZIP file to a folder on your computer. This folder contains all the files, including the pre-built `dist/` directory.
 
 #### 2. Load the Unpacked Extension
 
@@ -198,11 +206,15 @@ This tool will parse the Chrome manifest and generate an Xcode project configure
 ### 🔄 Updating & Tracking Code Changes
 
 #### How to update the extension:
-Whenever a new update is pushed to the repository, pull the latest changes on your laptops:
-```bash
-git pull origin main
-```
-Then, simply click the **Reload** (circular arrow) icon on the **PRIVISEE-X** card in your browser's extension manager. The updates will apply instantly!
+* **If you installed via Git**: Run this command to pull the latest updates:
+  ```bash
+  git pull origin main
+  ```
+* **If you installed via ZIP (without Git)**:
+  1. Go to the GitHub repository and download the ZIP file again.
+  2. Extract the file and overwrite the old files in your extension folder.
+* **To apply the updates in your browser**:
+  Go to your browser's extensions manager page (`chrome://extensions` or `about:debugging`), and click the **Reload** (circular arrow) icon on the **PRIVISEE-X** card. The updates will load instantly!
 
 #### How to track recent updates:
 If you or your friends want to see what was changed in the latest code pushes:

@@ -244,8 +244,8 @@ export class StorageManager {
     });
   }
 
-  /** Get risk history for a specific domain (last N entries) */
-  async getRiskHistoryForDomain(domain, limit = 50) {
+  /** Get risk history for a specific domain (last N entries, newest first, returned chronologically) */
+  async getRiskHistoryForDomain(domain, limit = 200) {
     await this._ensureDB();
     return new Promise((resolve) => {
       try {
@@ -253,7 +253,7 @@ export class StorageManager {
         const tx    = this.db.transaction(['riskHistory'], 'readonly');
         const store = tx.objectStore('riskHistory');
         const index = store.index('domain');
-        const req   = index.openCursor(IDBKeyRange.only(domain));
+        const req   = index.openCursor(IDBKeyRange.only(domain), 'prev');
         req.onsuccess = (e) => {
           const cursor = e.target.result;
           if (cursor && results.length < limit) { results.push(cursor.value); cursor.continue(); }
@@ -321,7 +321,7 @@ export class StorageManager {
   /** Cleanup stale data */
   async cleanupOldData() {
     await this._ensureDB();
-    const oneWeekAgo  = Date.now() - (7  * 24 * 60 * 60 * 1000);
+    const ninetyDaysAgo = Date.now() - (90 * 24 * 60 * 60 * 1000);
     const oneMonthAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
     let deleted = 0;
 
@@ -339,7 +339,7 @@ export class StorageManager {
       } catch { resolve(); }
     });
 
-    await deleteByTimestamp('riskHistory', oneWeekAgo).catch(() => {});
+    await deleteByTimestamp('riskHistory', ninetyDaysAgo).catch(() => {});
     await deleteByTimestamp('anomalies', oneMonthAgo).catch(() => {});
     await deleteByTimestamp('blockedRequests', oneMonthAgo).catch(() => {});
     await deleteByTimestamp('behaviorLogs', oneMonthAgo).catch(() => {});

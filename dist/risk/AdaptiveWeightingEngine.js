@@ -72,8 +72,10 @@ export class AdaptiveWeightingEngine extends EngineBase {
       if (weights.threatIntel + delta <= 0.50) {
         weights.threatIntel += delta;
         // Decay other weights proportionally to maintain sum of 1.0
-        const decayShare = delta / 5;
-        const decayKeys = ['behavioral', 'staticHeaders', 'reputation', 'securityLayer', 'behavioralThreat'];
+        const decayKeys = trusted
+          ? ['staticHeaders', 'securityLayer', 'behavioralThreat']
+          : ['behavioral', 'staticHeaders', 'reputation', 'securityLayer', 'behavioralThreat'];
+        const decayShare = delta / decayKeys.length;
         decayKeys.forEach(k => {
           weights[k] = Math.max(0.01, weights[k] - decayShare);
         });

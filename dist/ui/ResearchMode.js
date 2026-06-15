@@ -29,17 +29,23 @@
 
   // ── Collect Full v4.0 Research Snapshot ────────────────────────────────────
   async function collectSnapshot() {
-    const [tabRes, secRes, advRes, graphRes, histSummaryRes, blRes, expRes] = await Promise.all([
+    const [tabRes, secRes, advRes, graphRes, histSummaryRes, blRes, expRes, lifecycleRes] = await Promise.all([
       msg({ action: 'GET_RESEARCH_DATA' }),
       msg({ action: 'GET_SECURITY_LAYER' }),
       msg({ action: 'GET_ADVISORY' }),
       msg({ action: 'GET_GRAPH_DATA' }),
       msg({ action: 'GET_RISK_HISTORY', hours: 168 }), // 7 days
       msg({ action: 'GET_BLOCKED_LOG' }),
-      msg({ action: 'GET_EXPLAINABILITY' })
+      msg({ action: 'GET_EXPLAINABILITY' }),
+      msg({ action: 'GET_RISK_LIFECYCLE' })
     ]);
 
     const domain = tabRes.domain || 'unknown';
+    const auditRes = await msg({
+      action: 'GET_RESEARCH_AUDIT',
+      domain,
+      explainability: expRes?.explanation || null
+    });
 
     // Domain-specific history timeline
     let domainTimeline = { riskTimeline: [], trackerCountTimeline: [], securityTimeline: [] };
@@ -61,8 +67,12 @@
         exportedAt:   new Date().toISOString(),
         tool:         'PRIVISEE-X v5.0 — Browser Threat Intelligence Platform',
         domain,
-        capturedUrl:  tabRes.domain ? `https://${tabRes.domain}` : 'unknown'
+        capturedUrl:  tabRes.domain ? `https://${tabRes.domain}` : 'unknown',
+        schemaVersion: auditRes.audit?.schemaVersion || 'legacy'
       },
+
+      researchAudit: auditRes.audit || null,
+      riskLifecycle: lifecycleRes.lifecycle || tabRes.riskLifecycle || null,
 
       // ── v4.0 Risk Breakdown ──────────────────────────────────────────
       riskSummary: {
@@ -223,6 +233,8 @@
       const s = snap.securityLayer;
       const f = snap.firewallSummary;
       const d = snap.behavioralDNA;
+      const a = snap.researchAudit;
+      const l = snap.riskLifecycle;
 
       container.querySelector('#rmSections').innerHTML =
         card('Risk Score (v4.0)', [
@@ -256,18 +268,49 @@
           ['Similarity',  d.clusterMatch?.similarity ? `${d.clusterMatch.similarity}%` : '—'],
           ['Risk Boost',  d.clusterMatch?.riskBoost != null ? `+${d.clusterMatch.riskBoost}` : '—']
         ]);
+
+      if (a) {
+        container.querySelector('#rmSectionsSec').innerHTML =
+          card('Research Audit Manifest', [
+            ['Schema', a.schemaVersion || '—'],
+            ['Coverage', `${a.dataQuality?.coverageScore ?? 0}/100`],
+            ['Integrity Hash', a.integrity?.hash || '—'],
+            ['Canonical Bytes', a.integrity?.canonicalBytes ?? '—'],
+            ['Risk Samples', a.sampling?.riskHistory?.count ?? 0],
+            ['Risk Slope/Day', a.sampling?.riskHistory?.slopePerDay ?? 0],
+            ['Blocked Samples', a.sampling?.blockedRequests?.count ?? 0],
+            ['Graph Nodes/Links', `${a.sampling?.graph?.nodes ?? 0}/${a.sampling?.graph?.links ?? 0}`]
+          ]);
+      } else {
+        container.querySelector('#rmSectionsSec').innerHTML = '';
+      }
+
+      if (l) {
+        container.querySelector('#rmSectionsSec').innerHTML +=
+          card('Risk Lifecycle Cycle', [
+            ['Current Score', `${l.currentScore ?? 0}/100`],
+            ['Dominant Window', l.dominantWindow || 'current'],
+            ['Trend', l.trend || 'STABLE'],
+            ['Confidence', `${l.confidence ?? 0}/100`],
+            ['Volatility', l.volatility ?? 0],
+            ['24h Avg', l.windows?.['24h']?.avg ?? '—'],
+            ['7d Avg', l.windows?.['7d']?.avg ?? '—'],
+            ['30d Trend Slope', l.windows?.['30d']?.slopePerDay ?? 0],
+            ['90d Baseline', l.windows?.['90d']?.avg ?? '—'],
+            ['Next Review', l.nextReviewAt ? new Date(l.nextReviewAt).toLocaleString() : '—'],
+            ['Action', l.recommendedAction || 'ALLOW_AND_MONITOR_PASSIVELY']
+          ]);
+      }
         
       if (snap.explainability) {
         const exp = snap.explainability;
-        container.querySelector('#rmSectionsSec').innerHTML =
+        container.querySelector('#rmSectionsSec').innerHTML +=
           card('Explainability Audit Summary', [
             ['Narrative Summary', exp.summary || '—'],
             ['Audit Confidence', `${exp.confidence ?? 0}%`],
             ['Evidence Points', exp.evidenceCount ?? 0],
             ...exp.contributors.map(c => [c.label, `+${c.contribution} pts (${c.impact} impact)`])
           ]);
-      } else {
-        container.querySelector('#rmSectionsSec').innerHTML = '';
       }
     }
 

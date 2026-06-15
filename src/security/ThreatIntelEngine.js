@@ -26,11 +26,21 @@ const SUSPICIOUS_REGISTRARS = new Set([
 // Pre-seeded local list of hashes (FNV-1a 32-bit hex) representing known threat indicators
 // Mimics a local bloom filter or hash blocklist updated on-disk
 const THREAT_INDICATOR_HASHES = new Set([
+  'b35e1100', // mock-malware-domain.com
+  '13cd0f58', // login-paypal-security.xyz
+  'c0d7a234', // metamask-verify.co
+  'edd620dc', // coin-wallet-update.net
+  '2633015a', // secure-bank-login.xyz
   '29ec10be', // mock-malware-domain.com
   'f38c20d0', // login-paypal-security.xyz
   '12ad8fef', // metamask-verify.co
   '55a10cbd', // coin-wallet-update.net
-  '902a7b8e'  // secure-bank-login.xyz
+  '902a7b8e', // secure-bank-login.xyz
+  'c7ea2efb', // mock-malware-domain.com
+  '755490cb', // login-paypal-security.xyz
+  'b9d38c64', // metamask-verify.co
+  '7036a9ef', // coin-wallet-update.net
+  'cbf0e386'  // secure-bank-login.xyz
 ]);
 
 // Whitelisted high-reputation domains (guaranteed Trusted category)

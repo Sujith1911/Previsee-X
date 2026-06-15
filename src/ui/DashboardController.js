@@ -315,7 +315,7 @@
           <td>${c.secure?'🔒':'<span style="color:var(--muted)">—</span>'}</td>
           <td style="font-size:12px">${c.httpOnly?'✓':'<span style="color:var(--muted)">—</span>'}</td>
           <td style="font-size:12px;color:var(--muted)">${esc(c.sameSite||'—')}</td>
-          <td><button class="btn btn-sm btn-danger" onclick="doDeleteCookie('${esc(c.name)}','${esc(url)}',${i})">🗑 Delete</button></td>
+          <td><button class="btn btn-sm btn-danger" data-action="deleteCookie" data-name="${esc(c.name)}" data-url="${esc(url)}" data-cookie-domain="${esc(c.domain||domain)}" data-path="${esc(c.path||'/')}" data-secure="${c.secure?'true':'false'}" data-store-id="${esc(c.storeId||'')}">🗑 Delete</button></td>
         </tr>`;
       }).join('');
     } catch(e) { console.error('[Dash] cookies:', e); }
@@ -413,9 +413,17 @@
           await _doWhitelist(domain);
           break;
         case 'deleteCookie': {
-          const ok = await send({ action: 'DELETE_COOKIE', name, url });
+          const ok = await send({
+            action: 'DELETE_COOKIE',
+            name,
+            url,
+            cookieDomain: btn.dataset.cookieDomain,
+            path: btn.dataset.path,
+            secure: btn.dataset.secure === 'true',
+            storeId: btn.dataset.storeId || undefined
+          });
           if (ok?.success) {
-            allCookies = allCookies.filter(c => !(c.name === name && c.domain === btn.dataset.cookieDomain));
+            allCookies = allCookies.filter(c => !(c.name === name && c.domain === btn.dataset.cookieDomain && (c.path || '/') === (btn.dataset.path || '/')));
             renderStats();
             renderCookies($('ckSearch')?.value || '', $('ckSort')?.value || 'domain');
           } else {
@@ -464,6 +472,41 @@
     await refresh();
   }
 
+  async function _doDeleteCookie(name, url, index) {
+    const cookie = allCookies[index] || {};
+    const ok = await send({
+      action: 'DELETE_COOKIE',
+      name,
+      url,
+      cookieDomain: cookie.domain,
+      path: cookie.path,
+      secure: !!cookie.secure,
+      storeId: cookie.storeId
+    });
+    if (ok?.success) {
+      const domain = (() => { try { return new URL(url).hostname; } catch { return ''; } })();
+      const domainClean = domain.replace(/^\./, '');
+      allCookies = allCookies.filter(c => !(c.name === name && (c.domain || '').replace(/^\./, '') === domainClean && (c.path || '/') === (cookie.path || '/')));
+      renderStats();
+      renderCookies($('ckSearch')?.value || '', $('ckSort')?.value || 'domain');
+      showDashToast(`🍪 Cookie "${name}" deleted`, 'success');
+    } else {
+      showDashToast('Could not delete cookie. Some browser cookies are protected.', 'error');
+    }
+  }
+
+  async function _doDeleteTracker(id) {
+    const ok = await send({ action: 'DELETE_TRACKER', id });
+    if (ok?.success !== false) {
+      allTrackers = allTrackers.filter(t => t.id !== id);
+      renderTrackers($('trSearch')?.value || '');
+      renderStats();
+      showDashToast('🕵️ Tracker removed', 'success');
+    } else {
+      showDashToast('Could not delete tracker entry', 'error');
+    }
+  }
+
   // ── Dashboard toast helper ───────────────────────────────────────────────────
   function showDashToast(message, type = 'success', duration = 2500) {
     let container = $('dashToastContainer');
@@ -487,6 +530,8 @@
 
   window.doDeleteSite    = _doDeleteSite;
   window.doWhitelist     = _doWhitelist;
+  window.doDeleteCookie  = _doDeleteCookie;
+  window.doDeleteTracker = _doDeleteTracker;
 
   // ── Firewall Log Tab ──────────────────────────────────────────────────────────
   function renderBlocked(q = '') {
@@ -738,7 +783,11 @@
       if (!confirm(`Delete ALL cookies for "${selectedSite}"?`)) return;
       const r = await send({ action: 'DELETE_ALL_COOKIES_FOR_SITE', domain: selectedSite });
       await refresh();
-      showDashToast(`🍪 Removed ${r?.removed||'?'} cookies for ${selectedSite}`, 'success');
+      const remaining = r?.remaining || 0;
+      showDashToast(
+        remaining ? `Removed ${r?.removed||0} cookies; ${remaining} protected cookie${remaining===1?'':'s'} remain` : `Removed ${r?.removed||0} cookies for ${selectedSite}`,
+        remaining ? 'warning' : 'success'
+      );
     });
     $('deleteAllTrackersForSite')?.addEventListener('click', async () => {
       if (!selectedSite) return;

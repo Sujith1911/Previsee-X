@@ -803,17 +803,17 @@
       btn.disabled = true; btn.textContent = '⏳ Deleting…';
       try {
         const res = await msg({ action: 'DELETE_COOKIES', domain: currentDomain });
-        if (res?.success !== false) {
+        if (res?.success) {
           // Immediately update local cookie count
           if (lastData) { lastData.cookieCount = 0; }
           if ($('cookieCount')) $('cookieCount').textContent = '0';
-          showToast('🍪 Cookies cleared successfully', 'success');
+          showToast(`🍪 Cleared ${res.removed || 0} cookie${res.removed === 1 ? '' : 's'}`, 'success');
           btn.textContent = '✓ Cleared';
           setTimeout(() => { btn.textContent = '🍪 Delete Cookies'; btn.disabled = false; }, 1800);
           // Re-fetch to get updated risk score
           setTimeout(fetchAndRender, 500);
         } else {
-          showToast('Could not delete some cookies', 'warning');
+          showToast(`${res?.remaining || 'Some'} cookie${res?.remaining === 1 ? '' : 's'} could not be deleted`, 'warning');
           btn.disabled = false; btn.textContent = '🍪 Delete Cookies';
         }
       } catch {

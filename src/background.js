@@ -19,6 +19,8 @@ import { analyzeDNA } from './risk/BehavioralDNA.js';
 import { ExplainabilityEngine } from './explainability/ExplainabilityEngine.js';
 import { GraphEngine } from './graph/GraphEngine.js';
 import { ThreatProjectionEngine } from './risk/ThreatProjectionEngine.js';
+import { buildResearchAudit } from './research/ResearchAudit.js';
+import { buildRiskLifecycle } from './risk/RiskLifecycleEngine.js';
 
 // ── Domain Lists ──────────────────────────────────────────────────────────────
 const AD_DOMAINS = [
@@ -432,14 +434,16 @@ async function calcRisk(tabId, domain) {
   let userHistory = 0;
   let riskDelta   = 0;
   let avg7d       = 0;
+  let dh          = [];
   try {
-    const hist = await storageManager.getRiskHistorySince(Date.now()-30*86400000);
-    const dh   = (hist||[]).filter(h=>h.domain===domain).sort((a,b)=>a.timestamp-b.timestamp);
-    if (dh.length) {
-      userHistory = Math.round(dh.reduce((a,h)=>a+h.score,0)/dh.length);
-      const lastVisitScore = dh[dh.length-1]?.score || 0;
+    dh = await storageManager.getRiskHistoryForDomain(domain, 200);
+    const cutoff30d = Date.now() - 30*86400000;
+    const dh30d = dh.filter(h=>h.timestamp>=cutoff30d);
+    if (dh30d.length) {
+      userHistory = Math.round(dh30d.reduce((a,h)=>a+h.score,0)/dh30d.length);
+      const lastVisitScore = dh30d[dh30d.length-1]?.score || 0;
       const cutoff7d = Date.now() - 7*86400000;
-      const dh7d = dh.filter(h=>h.timestamp>=cutoff7d);
+      const dh7d = dh30d.filter(h=>h.timestamp>=cutoff7d);
       avg7d = dh7d.length ? Math.round(dh7d.reduce((a,h)=>a+h.score,0)/dh7d.length) : 0;
       s._lastVisitScore = lastVisitScore;
     }
@@ -451,8 +455,8 @@ async function calcRisk(tabId, domain) {
 
   // 6. Run ThreatProjectionEngine
   try {
-    const hist = await storageManager.getRiskHistorySince(Date.now()-30*86400000);
-    const domHist = (hist||[]).filter(h=>h.domain===domain);
+    const cutoff30d = Date.now() - 30*86400000;
+    const domHist = dh.filter(h=>h.timestamp>=cutoff30d);
     const projectionResult = await threatProjectionEngine.execute({ history: domHist, currentScore: final });
     s.projection = {
       projectedRiskIn30Days: projectionResult.forecast30d,
@@ -465,6 +469,20 @@ async function calcRisk(tabId, domain) {
   } catch (e) {
     warn('Projection failed:', e.message);
   }
+
+  s.riskLifecycle = buildRiskLifecycle({
+    domain,
+    currentScore: final,
+    history: dh,
+    components: {
+      behavioral: behavioralRisk,
+      static: staticHeadersRisk,
+      reputation: reputationRisk,
+      security: securityLayerRisk,
+      threatIntel: threatIntelRisk,
+      behavioralThreat: behavioralThreatRisk
+    }
+  });
 
   // 7. Update GraphEngine
   if (domain && domain !== 'Analyzing…') {
@@ -724,18 +742,109 @@ async function setupAdBlocking() {
 }
 
 // ── Cookie + LocalStorage Deletion ───────────────────────────────────────────
-async function deleteCookieAndStorage(name, url, domain) {
-  try { await chrome.cookies.remove({ name, url }); } catch {}
+function normalizeCookieDomain(domain = '') {
+  return String(domain || '').replace(/^\./, '').toLowerCase();
+}
+
+function domainMatchesCookie(cookie, domain) {
+  const target = normalizeCookieDomain(domain);
+  const cookieDomain = normalizeCookieDomain(cookie?.domain);
+  return !!target && !!cookieDomain && (cookieDomain === target || cookieDomain.endsWith(`.${target}`) || target.endsWith(`.${cookieDomain}`));
+}
+
+function buildCookieRemovalUrls(cookie = {}, fallbackUrl = '') {
+  const urls = new Set();
+  if (fallbackUrl) urls.add(fallbackUrl);
+
+  const domain = normalizeCookieDomain(cookie.domain);
+  if (!domain) return [...urls];
+
+  const path = String(cookie.path || '/').startsWith('/') ? String(cookie.path || '/') : `/${cookie.path}`;
+  const schemes = cookie.secure ? ['https'] : ['https', 'http'];
+  for (const scheme of schemes) urls.add(`${scheme}://${domain}${path}`);
+  return [...urls];
+}
+
+async function removeCookieExact(cookie = {}, fallbackUrl = '') {
+  const detailsBase = { name: cookie.name };
+  if (cookie.storeId) detailsBase.storeId = cookie.storeId;
+  if (cookie.partitionKey) detailsBase.partitionKey = cookie.partitionKey;
+
+  let removed = false;
+  for (const url of buildCookieRemovalUrls(cookie, fallbackUrl)) {
+    try {
+      const result = await chrome.cookies.remove({ ...detailsBase, url });
+      if (result) removed = true;
+    } catch {}
+  }
+  return removed;
+}
+
+async function deleteSiteBrowserData(domains) {
+  const cleanDomains = [...new Set([].concat(domains || []).map(normalizeCookieDomain).filter(Boolean))];
+  if (!cleanDomains.length || !chrome.browsingData?.remove) return false;
+
+  try {
+    await chrome.browsingData.remove(
+      { origins: cleanDomains.flatMap(domain => [`http://${domain}`, `https://${domain}`]) },
+      {
+        cacheStorage: true,
+        cookies: true,
+        fileSystems: true,
+        indexedDB: true,
+        localStorage: true,
+        serviceWorkers: true,
+        webSQL: true
+      }
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function clearOpenTabStorage(domain, cookieName = '') {
   try {
     const tabs=await chrome.tabs.query({});
-    for (const tab of tabs.filter(t=>{ try{return clean(new URL(t.url).hostname).includes(clean(domain));}catch{return false;} })) {
+    for (const tab of tabs.filter(t=>{ try{return domainMatchesCookie({ domain: new URL(t.url).hostname }, domain);}catch{return false;} })) {
       try {
         await chrome.scripting.executeScript({ target:{tabId:tab.id},
-          func:(n)=>{ try{ Object.keys(localStorage).filter(k=>k===n||k.toLowerCase().includes(n.toLowerCase())).forEach(k=>localStorage.removeItem(k));}catch{} },
-          args:[name] });
+          func:async (name)=>{
+            try {
+              if (name) {
+                Object.keys(localStorage).filter(k=>k===name||k.toLowerCase().includes(name.toLowerCase())).forEach(k=>localStorage.removeItem(k));
+              } else {
+                localStorage.clear();
+                sessionStorage.clear();
+                if (self.caches) for (const key of await caches.keys()) await caches.delete(key);
+                if (indexedDB.databases) {
+                  const dbs = await indexedDB.databases();
+                  for (const db of dbs) if (db.name) indexedDB.deleteDatabase(db.name);
+                }
+              }
+            } catch {}
+          },
+          args:[cookieName] });
       } catch {}
     }
   } catch {}
+}
+
+async function deleteCookieAndStorage(cookie, fallbackUrl, domain) {
+  const removed = await removeCookieExact(cookie, fallbackUrl);
+  await clearOpenTabStorage(domain || cookie.domain, cookie.name);
+  return removed;
+}
+
+async function getCookiesForDomain(domain) {
+  const cleanDomain = normalizeCookieDomain(domain);
+  if (!cleanDomain) return [];
+  try {
+    const cookies = await chrome.cookies.getAll({ domain: cleanDomain });
+    return (cookies || []).filter(c => domainMatchesCookie(c, cleanDomain));
+  } catch {
+    return [];
+  }
 }
 
 // ── Listeners ─────────────────────────────────────────────────────────────────
@@ -1052,6 +1161,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           rawHeaders:      sc.rawHeaders||{},
           dnaHash:         stats.dnaHash,
           projection:      stats.projection,
+          riskLifecycle:   trusted?null:(stats.riskLifecycle||null),
           adsBlockedCount, trackersBlockedCount,
           strictMode
         });
@@ -1080,7 +1190,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
       else if (action==='GET_ALL_COOKIES') {
         let raw=[];
-        try { raw=message.domain?await chrome.cookies.getAll({domain:message.domain}):await chrome.cookies.getAll({}); } catch {}
+        try { raw=message.domain?await getCookiesForDomain(message.domain):await chrome.cookies.getAll({}); } catch {}
         const now=Date.now()/1000;
         const cookies=(raw||[]).map(c=>({
           ...c,
@@ -1094,7 +1204,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       else if (action==='DELETE_COOKIE') {
         const domain=(message.domain||'').replace(/^\./,'')||
           (()=>{ try{return clean(new URL(message.url).hostname);}catch{return '';} })();
-        await deleteCookieAndStorage(message.name,message.url,domain);
+        const cookie = {
+          name: message.name,
+          domain: message.cookieDomain || domain,
+          path: message.path || '/',
+          secure: !!message.secure,
+          storeId: message.storeId,
+          partitionKey: message.partitionKey
+        };
+        const removed = await deleteCookieAndStorage(cookie,message.url,domain);
         // Refresh risk + push stats update after cookie deletion
         try {
           const tabs=await chrome.tabs.query({ active:true, currentWindow:true });
@@ -1105,41 +1223,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             // Force cookie count refresh in tab stats
             const s=getTabStats(tabId);
             if (s.domain) {
-              try { s.cookieCount=(await chrome.cookies.getAll({domain:s.domain}))?.length||0; } catch {}
+              try { s.cookieCount=(await getCookiesForDomain(s.domain))?.length||0; } catch {}
             }
             // Push update to popup
             try { await chrome.runtime.sendMessage({ type:'STATS_UPDATE', tabId, domain }); } catch {}
           }
         } catch {}
-        sendResponse({success:true});
+        sendResponse({success:removed});
       }
 
-      else if (action==='DELETE_ALL_COOKIES_FOR_SITE') {
+      else if (action==='DELETE_ALL_COOKIES_FOR_SITE' || action==='DELETE_COOKIES') {
         let removed=0;
+        let failed=0;
+        const domain = normalizeCookieDomain(message.domain);
         try {
-          const all=await chrome.cookies.getAll({domain:message.domain});
+          const all=await getCookiesForDomain(domain);
+          const dataDomains = new Set([domain]);
           for (const c of all) {
-            const url=`${c.secure?'https':'http'}://${(c.domain||'').replace(/^\./,'')}${c.path||'/'}`;
-            await deleteCookieAndStorage(c.name,url,message.domain);
-            removed++;
+            dataDomains.add(normalizeCookieDomain(c.domain));
+            const url=`${c.secure?'https':'http'}://${normalizeCookieDomain(c.domain)}${c.path||'/'}`;
+            if (await deleteCookieAndStorage(c,url,domain)) removed++;
+            else failed++;
           }
+          await deleteSiteBrowserData([...dataDomains]);
           const tabs=await chrome.tabs.query({});
           for (const tab of tabs) {
             try {
-              if (!clean(new URL(tab.url).hostname).includes(clean(message.domain))) continue;
-              await chrome.scripting.executeScript({ target:{tabId:tab.id},
-                func:()=>{ try{localStorage.clear();sessionStorage.clear();}catch{} } });
+              if (!domainMatchesCookie({ domain: new URL(tab.url).hostname }, domain)) continue;
+              await clearOpenTabStorage(domain);
               // Reset cookie count in tab stats
               const s=getTabStats(tab.id);
-              s.cookieCount=0;
+              s.cookieCount=(await getCookiesForDomain(domain))?.length||0;
               riskDebounce[tab.id]=0;
               await updateRisk(tab.id);
               // Push update to popup
-              try { await chrome.runtime.sendMessage({ type:'STATS_UPDATE', tabId:tab.id, domain:message.domain }); } catch {}
+              try { await chrome.runtime.sendMessage({ type:'STATS_UPDATE', tabId:tab.id, domain }); } catch {}
             } catch {}
           }
         } catch {}
-        sendResponse({success:true,removed});
+        const remaining = await getCookiesForDomain(domain);
+        sendResponse({success:remaining.length===0,removed,failed,remaining:remaining.length});
       }
 
       else if (action==='GET_RISK_HISTORY') {
@@ -1325,10 +1448,74 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             similarity: dna.matches[0]?.similarity || 0,
             riskBoost: dna.matches[0]?.name === 'Trusted Services' ? 0 : (dna.matches[0]?.name === 'Adware Network' ? 15 : 25)
           },
-          projection:s.projection, blockedRecent,
+          projection:s.projection, riskLifecycle:s.riskLifecycle||null, blockedRecent,
           adsBlockedCount, trackersBlockedCount, strictMode,
           ts:Date.now()
         });
+      }
+
+      else if (action==='GET_RISK_LIFECYCLE') {
+        const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+        const s=tab?getTabStats(tab.id):{};
+        const domain=message.domain || s.domain || '';
+        let history=[];
+        try { history=domain?await storageManager.getRiskHistoryForDomain(domain,500):[]; } catch {}
+        const lifecycle = s.riskLifecycle || buildRiskLifecycle({
+          domain: domain || 'unknown',
+          currentScore: s.riskScore || 0,
+          history,
+          components: {
+            behavioral: s.behavioralScore || 0,
+            static: s.staticScore != null ? 100 - s.staticScore : null,
+            reputation: s.reputationScore || 0,
+            security: s.securityLayerScore || 0
+          }
+        });
+        sendResponse({ success:true, lifecycle });
+      }
+
+      else if (action==='GET_RESEARCH_AUDIT') {
+        const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+        const s=tab?getTabStats(tab.id):{};
+        const bh=tab?getTabBehavior(tab.id):{};
+        const sc=tab?tabStaticCache[tab.id]:{};
+        const domain=message.domain || s.domain || '';
+        let riskHistory=[];
+        let blockedRequests=[];
+        let trackerEntries=[];
+
+        try { riskHistory=domain?await storageManager.getRiskHistoryForDomain(domain,500):[]; } catch {}
+        try {
+          const allBlocked=await storageManager.getBlockedRequests(500);
+          blockedRequests=(allBlocked||[]).filter(b => !domain || b.domain===domain || b.domain?.includes(domain));
+        } catch {}
+        try {
+          const allTrackers=await storageManager.getAll('trackers',5000);
+          trackerEntries=(allTrackers||[]).filter(t => !domain || t.siteDomain===domain || t.trackerDomain?.includes(domain));
+        } catch {}
+
+        const graphNodes = new Map();
+        const graphLinks = [];
+        for (const entry of trackerEntries) {
+          if (!entry.siteDomain || !entry.trackerDomain) continue;
+          graphNodes.set(entry.siteDomain, { id: entry.siteDomain, type: 'site' });
+          graphNodes.set(entry.trackerDomain, { id: entry.trackerDomain, type: 'tracker' });
+          graphLinks.push({ source: entry.siteDomain, target: entry.trackerDomain, value: entry.count || 1 });
+        }
+
+        const audit = buildResearchAudit({
+          domain: domain || 'unknown',
+          riskHistory,
+          blockedRequests,
+          graph: { nodes: [...graphNodes.values()], links: graphLinks },
+          staticBreakdown: sc?.breakdown || [],
+          rawHeaders: sc?.rawHeaders || {},
+          behavioralSignature: bh || {},
+          riskLifecycle: s.riskLifecycle || null,
+          explainability: message.explainability || null
+        });
+
+        sendResponse({ success:true, audit });
       }
 
       else if (action==='RELOAD_TRUSTED_DOMAINS') {

@@ -320,6 +320,10 @@ export class GraphEngine extends EngineBase {
     this.logger.info(`Ecosystem communities detected for ${nodeIds.length} nodes`);
   }
 
+  detectEcosystemCommunities(iterations = 4) {
+    return this.detectCommunities(iterations);
+  }
+
   /**
    * Helper: extract root domain
    */
